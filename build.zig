@@ -105,4 +105,15 @@ pub fn build(b: *std.Build) void {
 
     const qemu_step = b.step("qemu", "Run inside QEMU");
     qemu_step.dependOn(&qemu_cmd.step);
+
+    const kernel_unit_tests = b.addTest(.{
+        .root_source_file = .{ .path = "kernel/src/arch/" ++ @tagName(kernel_config.arch) ++ "/start.zig" },
+        .optimize = optimize,
+    });
+    kernel_unit_tests.addOptions("options", kernel_options);
+
+    const run_kernel_unit_tests = b.addRunArtifact(kernel_unit_tests);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_kernel_unit_tests.step);
 }
