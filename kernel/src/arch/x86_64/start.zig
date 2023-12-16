@@ -4,6 +4,7 @@ const options = @import("options");
 const cpu = @import("cpu.zig");
 const gdt = @import("gdt.zig");
 const int = @import("int.zig");
+const pmm = @import("../../mm/pmm.zig");
 
 pub const std_options = struct {
     pub fn logFn(comptime message_level: std.log.Level, comptime scope: @Type(.EnumLiteral), comptime format: []const u8, args: anytype) void {
@@ -45,6 +46,7 @@ fn init() void {
     log.info("Booting chain (v{})", .{options.version});
     gdt.init();
     int.init();
+    pmm.init();
 }
 
 test {
