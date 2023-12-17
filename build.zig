@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) void {
         .main_mod_path = .{ .path = "kernel/src" },
         .target = target,
         .optimize = optimize,
+        .single_threaded = true,
     });
     kernel.setLinkerScript(.{ .path = "kernel/linker-" ++ @tagName(kernel_config.arch) ++ ".ld" });
     kernel.pie = true;

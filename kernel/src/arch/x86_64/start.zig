@@ -6,6 +6,8 @@ const gdt = @import("gdt.zig");
 const int = @import("int.zig");
 const pmm = @import("../../mm/pmm.zig");
 
+pub const os = @import("../../os.zig");
+
 pub const std_options = struct {
     pub fn logFn(comptime message_level: std.log.Level, comptime scope: @Type(.EnumLiteral), comptime format: []const u8, args: anytype) void {
         var log_allocator_buf: [2048]u8 = undefined;
@@ -45,11 +47,13 @@ fn _start() callconv(.C) noreturn {
 
     for (0..4) |_| cpu.outb(0xE9, '\n');
 
-    init();
+    init() catch |e| switch (e) {
+        inline else => |err| @panic("Error: " ++ @errorName(err)),
+    };
     cpu.halt();
 }
 
-fn init() void {
+fn init() !void {
     log.info("Booting chain (v{})", .{options.version});
     gdt.init();
     int.init();
