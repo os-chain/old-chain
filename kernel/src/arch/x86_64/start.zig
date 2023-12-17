@@ -25,6 +25,13 @@ pub const std_options = struct {
     }
 };
 
+pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    log.err("{s}", .{msg});
+    log.err("Root-level error, panicking", .{});
+
+    cpu.halt();
+}
+
 const log = std.log.scoped(.core);
 
 comptime {
