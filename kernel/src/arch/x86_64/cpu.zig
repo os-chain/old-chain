@@ -60,3 +60,32 @@ pub inline fn lgdt(gdtd: *const gdt.Gdtd) void {
         : [gdtd] "{rax}" (gdtd),
     );
 }
+
+pub const CpuidResult = struct {
+    rax: u64,
+    rbx: u64,
+    rcx: u64,
+    rdx: u64,
+};
+
+pub inline fn cpuid(rax_in: u64) CpuidResult {
+    var rax_out: u64 = undefined;
+    var rbx_out: u64 = undefined;
+    var rcx_out: u64 = undefined;
+    var rdx_out: u64 = undefined;
+
+    asm volatile ("cpuid"
+        : [rax_out] "=%[rax]" (rax_out),
+          [rbx_out] "=%[rbx]" (rbx_out),
+          [rcx_out] "=%[rcx]" (rcx_out),
+          [rdx_out] "=%[rdx]" (rdx_out),
+        : [rax_in] "{rax}" (rax_in),
+    );
+
+    return .{
+        .rax = rax_out,
+        .rbx = rbx_out,
+        .rcx = rcx_out,
+        .rdx = rdx_out,
+    };
+}
