@@ -176,6 +176,7 @@ fn getVector(comptime i: u8) ?*const fn () callconv(.Interrupt) void {
             break :blk struct {
                 fn vector() callconv(.Interrupt) void {
                     log.err(std.fmt.comptimePrint("Exception: {s}[{d}] ({s})", .{ exception.getMnemonic(), exception_i, exception.getDescription() }), .{});
+                    cpu.halt();
                 }
             }.vector;
         },

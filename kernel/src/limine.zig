@@ -34,3 +34,15 @@ pub const MemoryMapRequest = extern struct {
     revision: u64 = 0,
     response: ?*MemoryMapResponse = null,
 };
+
+pub const KernelAddressResponse = extern struct {
+    revision: u64,
+    physical_base: u64,
+    virtual_base: u64,
+};
+
+pub const KernelAddressRequest = extern struct {
+    id: [4]u64 = magic(0x71ba76863cc55f63, 0xb2644a48c516a487),
+    revision: u64 = 0,
+    response: ?*KernelAddressResponse = null,
+};

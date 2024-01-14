@@ -29,32 +29,31 @@ fn getFeatures(comptime arch: std.Target.Cpu.Arch) struct { add: std.Target.Cpu.
 pub fn build(b: *std.Build) void {
     const features = getFeatures(kernel_config.arch);
 
-    const target: std.zig.CrossTarget = .{
+    const target = b.resolveTargetQuery(.{
         .cpu_arch = kernel_config.arch,
         .os_tag = .freestanding,
         .abi = .none,
         .cpu_features_add = features.add,
         .cpu_features_sub = features.sub,
-    };
+    });
 
     const optimize = b.standardOptimizeOption(.{});
 
     const kernel = b.addExecutable(.{
         .name = "kernel",
-        .root_source_file = .{ .path = "kernel/src/arch/" ++ @tagName(kernel_config.arch) ++ "/start.zig" },
-        .main_mod_path = .{ .path = "kernel/src" },
+        .root_source_file = .{ .path = "kernel/src/main.zig" },
         .target = target,
         .optimize = optimize,
         .single_threaded = true,
+        .code_model = .kernel,
+        .pic = true,
     });
     kernel.setLinkerScript(.{ .path = "kernel/linker-" ++ @tagName(kernel_config.arch) ++ ".ld" });
-    kernel.pie = true;
-    if (kernel_config.arch.isX86()) kernel.code_model = .kernel;
 
     const kernel_options = b.addOptions();
     kernel_options.addOption(std.SemanticVersion, "version", version);
 
-    kernel.addOptions("options", kernel_options);
+    kernel.root_module.addOptions("options", kernel_options);
 
     const kernel_step = b.step("kernel", "Build the kernel");
     kernel_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
@@ -108,10 +107,10 @@ pub fn build(b: *std.Build) void {
     qemu_step.dependOn(&qemu_cmd.step);
 
     const kernel_unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "kernel/src/arch/" ++ @tagName(kernel_config.arch) ++ "/start.zig" },
+        .root_source_file = .{ .path = "kernel/src/main.zig" },
         .optimize = optimize,
     });
-    kernel_unit_tests.addOptions("options", kernel_options);
+    kernel_unit_tests.root_module.addOptions("options", kernel_options);
 
     const run_kernel_unit_tests = b.addRunArtifact(kernel_unit_tests);
 

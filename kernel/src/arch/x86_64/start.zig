@@ -5,34 +5,7 @@ const cpu = @import("cpu.zig");
 const gdt = @import("gdt.zig");
 const int = @import("int.zig");
 const pmm = @import("../../mm/pmm.zig");
-
-pub const os = @import("../../os.zig");
-
-pub const std_options = struct {
-    pub fn logFn(comptime message_level: std.log.Level, comptime scope: @Type(.EnumLiteral), comptime format: []const u8, args: anytype) void {
-        var log_allocator_buf: [2048]u8 = undefined;
-        var log_fba = std.heap.FixedBufferAllocator.init(&log_allocator_buf);
-        const log_allocator = log_fba.allocator();
-
-        const msg = std.fmt.allocPrint(log_allocator, switch (message_level) {
-            .info => "\x1b[34m",
-            .warn => "\x1b[33m",
-            .err => "\x1b[31m",
-            .debug => "\x1b[90m",
-        } ++ "[" ++ @tagName(message_level) ++ "]\x1b[0m (" ++ @tagName(scope) ++ ") " ++ format ++ "\n", args) catch "LOG_FN_OOM";
-
-        for (msg) |char| {
-            cpu.outb(0xE9, char);
-        }
-    }
-};
-
-pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
-    log.err("{s}", .{msg});
-    log.err("Root-level error, panicking", .{});
-
-    cpu.halt();
-}
+const vmm = @import("../../mm/vmm.zig");
 
 const log = std.log.scoped(.core);
 
@@ -55,9 +28,13 @@ fn _start() callconv(.C) noreturn {
 
 fn init() !void {
     log.info("Booting chain (v{})", .{options.version});
+
     gdt.init();
     int.init();
     pmm.init();
+    vmm.init();
+
+    log.info("Hello from chain", .{});
 }
 
 test {
