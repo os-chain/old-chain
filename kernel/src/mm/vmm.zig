@@ -103,6 +103,6 @@ pub inline fn toHigherHalf(ptr: usize) usize {
     return ptr + 0xFFFF800000000000;
 }
 
-pub inline fn fromHigherHald(ptr: usize) usize {
+pub inline fn fromHigherHalf(ptr: usize) usize {
     return ptr - 0xFFFF800000000000;
 }
