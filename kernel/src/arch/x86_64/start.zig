@@ -6,6 +6,7 @@ const gdt = @import("gdt.zig");
 const int = @import("int.zig");
 const pmm = @import("../../mm/pmm.zig");
 const vmm = @import("../../mm/vmm.zig");
+const acpi = @import("../../acpi.zig");
 
 const log = std.log.scoped(.core);
 
@@ -33,6 +34,7 @@ fn init() !void {
     int.init();
     pmm.init();
     vmm.init();
+    try acpi.init();
 
     log.info("Hello from chain", .{});
 }
