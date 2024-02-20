@@ -1,5 +1,6 @@
 const std = @import("std");
 const limine = @import("../limine.zig");
+const hal = @import("../hal.zig");
 
 pub export var mmap_req = limine.MemoryMapRequest{};
 
@@ -7,93 +8,95 @@ const log = std.log.scoped(.pmm);
 
 var bitmap: []u8 = undefined;
 
+/// Mark a page as used, by index
+pub inline fn setUsed(i: usize) void {
+    bitmap[@divFloor(i, 8)] &= ~(@as(u8, 1) << @truncate(i % 8));
+}
+
+/// Mark a page as free (not used), by index
+pub inline fn setFree(i: usize) void {
+    bitmap[@divFloor(i, 8)] |= (@as(u8, 1) << @truncate(i % 8));
+}
+
+/// Is the `i`th page free (not used)?
+pub inline fn isFree(i: usize) bool {
+    return (bitmap[@divFloor(i, 8)] & (@as(u8, 1) << @truncate(i % 8))) > 0;
+}
+
+/// Is the `i`th page used?
+pub inline fn isUsed(i: usize) bool {
+    return !isFree(i);
+}
+
+inline fn vaddrFromIdx(i: usize) usize {
+    return @intFromPtr(bitmap.ptr) + 4096 * i;
+}
+
+inline fn idxFromVaddr(vaddr: usize) usize {
+    return @divExact(vaddr - @intFromPtr(bitmap.ptr), 4096);
+}
+
 pub fn init() void {
-    log.debug("Initializing", .{});
+    log.debug("Initializing...", .{});
     defer log.debug("Initialization done", .{});
 
     if (mmap_req.response) |mmap_res| {
-        var biggest_section: ?limine.MemoryMapEntry = null;
-        for (mmap_res.entries()) |entry| {
+        var best_region: ?[]u8 = null;
+
+        for (mmap_res.entries(), 0..) |entry, i| {
+            log.debug("Memory map entry {}: {s} 0x{x} -- 0x{x}", .{ i, @tagName(entry.kind), entry.base, entry.base + entry.length });
+
             if (entry.kind == .usable) {
-                log.debug("Memory section: {x:0>16} --- {x:0>16}", .{ entry.base, entry.base + entry.length });
-                if (biggest_section == null or entry.length > biggest_section.?.length) {
-                    biggest_section = entry.*;
+                if (best_region == null or best_region.?.len < entry.length) {
+                    best_region = @as([*]u8, @ptrFromInt(entry.base))[0..entry.length];
                 }
             }
         }
 
-        if (biggest_section) |section| {
-            log.debug("Selected section: base={x} len={d}", .{ section.base, section.length });
-            const page_count = @divFloor(section.length, 4096);
+        if (best_region) |phys_region| {
+            const virt_region = @as([*]u8, @ptrFromInt(hal.virtFromPhys(@intFromPtr(phys_region.ptr))))[0..phys_region.len];
 
-            bitmap = @as([*]u8, @ptrFromInt(section.base))[0..@divFloor(page_count, 8)];
-            log.debug("Bitmap: ptr={*} len={d}", .{ bitmap.ptr, bitmap.len });
+            log.debug("Using region P:{x} -- P:{x} which is V:{x} -- V:{x}", .{
+                @intFromPtr(phys_region.ptr),
+                @intFromPtr(phys_region.ptr) + phys_region.len,
+                @intFromPtr(virt_region.ptr),
+                @intFromPtr(virt_region.ptr) + virt_region.len,
+            });
+
+            const page_count = @divFloor(phys_region.len, 4096);
+
+            bitmap = virt_region[0..@divFloor(page_count, 8)];
+            log.debug("Bitmap at V:{x} -- V:{x}", .{ @intFromPtr(bitmap.ptr), @intFromPtr(bitmap.ptr) + bitmap.len });
 
             @memset(bitmap, 0xFF);
 
             const bitmap_pages = std.math.divCeil(usize, bitmap.len, 4096) catch unreachable;
-            log.debug("The bitmap itself takes up {d} pages", .{bitmap_pages});
+            log.debug("Bitmap uses {} pages", .{bitmap_pages});
+
             for (0..bitmap_pages) |i| {
                 setUsed(i);
             }
-
-            log.debug("{d} pages available", .{countFree()});
         } else @panic("No usable memory");
-    } else @panic("Memory map not available");
+    } else @panic("No memory map info available");
 }
 
-pub fn countFree() usize {
-    var count: usize = 0;
+fn alloc(_: *anyopaque, n: usize, _: u8, _: usize) ?[*]u8 {
+    std.debug.assert(n > 0);
 
-    for (0..bitmap.len * 8) |i| {
-        if (isFree(i)) count += 1;
-    }
-
-    return count;
-}
-
-inline fn isFree(idx: usize) bool {
-    return (bitmap[@divFloor(idx, 8)] & (@as(u8, 1) << @truncate(idx % 8))) > 0;
-}
-
-inline fn isUsed(idx: usize) bool {
-    return !isFree(idx);
-}
-
-inline fn setFree(idx: usize) void {
-    bitmap[@divFloor(idx, 8)] |= (@as(u8, 1) << @truncate(idx % 8));
-}
-
-inline fn setUsed(idx: usize) void {
-    bitmap[@divFloor(idx, 8)] &= ~(@as(u8, 1) << @truncate(idx % 8));
-}
-
-inline fn addrFromIdx(idx: usize) [*]u8 {
-    return @ptrCast(bitmap.ptr + 4096 * idx);
-}
-
-inline fn idxFromAddr(addr: [*]u8) usize {
-    return @divExact(@intFromPtr(addr) - @intFromPtr(bitmap.ptr), 4096);
-}
-
-fn alloc(_: *anyopaque, len: usize, ptr_align: u8, _: usize) ?[*]u8 {
-    log.debug("Allocating {d} bytes", .{len});
-    const page_count = std.math.divCeil(usize, len, 4096) catch unreachable;
-
-    if (ptr_align > 12) return null; // TODO: Implement alignment
+    const page_count = std.math.divCeil(usize, n, 4096) catch unreachable;
 
     var count: usize = 0;
-    var found_idx: usize = undefined;
+    var found_i: usize = undefined;
     for (0..bitmap.len * 8) |i| {
         if (isFree(i)) {
-            if (count == 0) found_idx = i;
+            if (count == 0) found_i = i;
             count += 1;
 
             if (count >= page_count) {
-                for (found_idx..found_idx + count) |j| {
+                for (found_i..found_i + count) |j| {
                     setUsed(j);
                 }
-                return addrFromIdx(found_idx);
+                return @ptrFromInt(vaddrFromIdx(found_i));
             }
         } else {
             count = 0;
@@ -104,20 +107,18 @@ fn alloc(_: *anyopaque, len: usize, ptr_align: u8, _: usize) ?[*]u8 {
 }
 
 fn free(_: *anyopaque, buf: []u8, _: u8, _: usize) void {
-    log.debug("Freeing {d} bytes", .{buf.len});
-    const idx = idxFromAddr(buf.ptr);
+    const i = idxFromVaddr(@intFromPtr(buf.ptr));
     const count = std.math.divCeil(usize, buf.len, 4096) catch unreachable;
-
-    for (idx..idx + count) |i| {
-        setFree(i);
+    for (i..i + count) |j| {
+        setFree(j);
     }
 }
 
-pub const allocator: std.mem.Allocator = .{
+pub const allocator = std.mem.Allocator{
     .ptr = undefined,
     .vtable = &.{
-        .alloc = &alloc,
-        .resize = &std.mem.Allocator.noResize, // TODO: Support resizing
-        .free = &free,
+        .alloc = alloc,
+        .resize = std.mem.Allocator.noResize,
+        .free = free,
     },
 };

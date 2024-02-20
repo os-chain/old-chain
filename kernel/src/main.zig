@@ -1,6 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const pmm = @import("mm/pmm.zig");
 const hal = @import("hal.zig");
 
 pub const os = @import("os.zig");

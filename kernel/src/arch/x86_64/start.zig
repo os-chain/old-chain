@@ -4,8 +4,8 @@ const options = @import("options");
 const cpu = @import("cpu.zig");
 const gdt = @import("gdt.zig");
 const int = @import("int.zig");
+const paging = @import("paging.zig");
 const pmm = @import("../../mm/pmm.zig");
-const vmm = @import("../../mm/vmm.zig");
 const acpi = @import("../../acpi.zig");
 
 const log = std.log.scoped(.core);
@@ -32,8 +32,8 @@ fn init() !void {
 
     gdt.init();
     int.init();
+    paging.init();
     pmm.init();
-    vmm.init();
     try acpi.init();
 
     log.info("Hello from chain", .{});
@@ -41,4 +41,5 @@ fn init() !void {
 
 test {
     _ = std.testing.refAllDeclsRecursive(int);
+    _ = std.testing.refAllDeclsRecursive(paging);
 }

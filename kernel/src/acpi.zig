@@ -1,6 +1,6 @@
 const std = @import("std");
 const limine = @import("limine.zig");
-const vmm = @import("mm/vmm.zig");
+const hal = @import("hal.zig");
 
 pub export var rsdp_req = limine.RsdpRequest{};
 
@@ -107,8 +107,8 @@ pub fn init() !void {
 
                 log.debug("RSDP OEMID=\"{s}\"", .{rsdp.oemid});
 
-                log.debug("RSDP addr={x}", .{vmm.toHigherHalf(rsdp.rsdt_addr)});
-                root_sdt = @ptrFromInt(vmm.toHigherHalf(rsdp.rsdt_addr));
+                log.debug("RSDP addr={x}", .{hal.virtFromPhys(rsdp.rsdt_addr)});
+                root_sdt = @ptrFromInt(hal.virtFromPhys(rsdp.rsdt_addr));
                 log.debug("Root SDT signature=\"{s}\"", .{root_sdt.header.signature});
                 if (!std.mem.eql(u8, "RSDT", &root_sdt.header.signature)) return error.BadRsdpSignature;
 
@@ -117,16 +117,16 @@ pub fn init() !void {
                 log.debug("Root SDT count={d}", .{entry_count});
 
                 for (0..entry_count) |i| {
-                    log.debug("Entry {d} from SDT addr={x}", .{ i, vmm.toHigherHalf(root_sdt.tables[i]) });
-                    const entry: *anyopaque = @ptrFromInt(vmm.toHigherHalf(root_sdt.tables[i]));
+                    log.debug("Entry {d} from SDT addr={x}", .{ i, hal.virtFromPhys(root_sdt.tables[i]) });
+                    const entry: *anyopaque = @ptrFromInt(hal.virtFromPhys(root_sdt.tables[i]));
 
                     log.debug("Entry {d} from SDT signature=\"{s}\"", .{ i, @as(*SdtHeader, @ptrCast(entry)).signature });
                     if (std.mem.eql(u8, "FACP", &@as(*SdtHeader, @ptrCast(entry)).signature)) {
                         fadt = @ptrCast(entry);
                         log.debug("FADT found at {x}", .{@intFromPtr(fadt.?)});
 
-                        log.debug("DSDT addr={x}", .{vmm.toHigherHalf(fadt.?.dsdt)});
-                        dsdt = @ptrFromInt(vmm.toHigherHalf(fadt.?.dsdt));
+                        log.debug("DSDT addr={x}", .{hal.virtFromPhys(fadt.?.dsdt)});
+                        dsdt = @ptrFromInt(hal.virtFromPhys(fadt.?.dsdt));
 
                         log.debug("DSDT signature=\"{s}\"", .{dsdt.?.header.signature});
                         if (!std.mem.eql(u8, "DSDT", &dsdt.?.header.signature)) return error.BadDsdtSignature;

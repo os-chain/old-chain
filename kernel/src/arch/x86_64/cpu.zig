@@ -89,3 +89,18 @@ pub inline fn cpuid(rax_in: u64) CpuidResult {
         .rdx = rdx_out,
     };
 }
+
+pub const Cr3 = struct {
+    pub inline fn write(value: usize) void {
+        asm volatile ("mov %[value], %cr3"
+            :
+            : [value] "r" (value),
+        );
+    }
+
+    pub inline fn read() usize {
+        return asm volatile ("mov %cr3, %[res]"
+            : [res] "=r" (-> usize),
+        );
+    }
+};

@@ -57,3 +57,14 @@ pub const RsdpRequest = extern struct {
     revision: u64 = 0,
     response: ?*RsdpResponse = null,
 };
+
+pub const HhdmResponse = extern struct {
+    revision: u64,
+    offset: u64,
+};
+
+pub const HhdmRequest = extern struct {
+    id: [4]u64 = magic(0x48dcf1cb8ad2b852, 0x63984e959a98244b),
+    revision: u64 = 0,
+    response: ?*HhdmResponse = null,
+};
