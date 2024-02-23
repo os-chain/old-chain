@@ -1,5 +1,5 @@
 const std = @import("std");
-const limine = @import("../../limine.zig");
+const limine = @import("limine");
 const cpu = @import("cpu.zig");
 
 pub const PageTable = [512]PageTableEntry;

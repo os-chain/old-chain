@@ -1,0 +1,11 @@
+.{
+    .name = "chain",
+    .version = "0.1.0-dev",
+    .dependencies = .{
+        .limine = .{
+            .url = "https://github.com/limine-bootloader/limine-zig/archive/refs/heads/trunk.tar.gz",
+            .hash = "1220889cec612d653c31a4063d20daa9ec382ac23f76e9cc60a778b0ad17377bafa1",
+        },
+    },
+    .paths = .{""},
+}

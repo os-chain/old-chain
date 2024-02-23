@@ -1,5 +1,5 @@
 const std = @import("std");
-const limine = @import("limine.zig");
+const limine = @import("limine");
 const hal = @import("hal.zig");
 
 pub export var rsdp_req = limine.RsdpRequest{};

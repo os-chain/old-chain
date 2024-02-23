@@ -39,6 +39,8 @@ pub fn build(b: *std.Build) void {
 
     const optimize = b.standardOptimizeOption(.{});
 
+    const limine_mod = b.dependency("limine", .{}).module("limine");
+
     const kernel = b.addExecutable(.{
         .name = "kernel",
         .root_source_file = .{ .path = "kernel/src/main.zig" },
@@ -48,6 +50,7 @@ pub fn build(b: *std.Build) void {
         .code_model = .kernel,
         .pic = true,
     });
+    kernel.root_module.addImport("limine", limine_mod);
     kernel.setLinkerScript(.{ .path = "kernel/linker-" ++ @tagName(kernel_config.arch) ++ ".ld" });
 
     const kernel_options = b.addOptions();
