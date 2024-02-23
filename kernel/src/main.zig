@@ -28,6 +28,8 @@ pub const std_options = .{
 };
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    @setCold(true);
+
     log.err("{s}", .{msg});
 
     hal.halt();
