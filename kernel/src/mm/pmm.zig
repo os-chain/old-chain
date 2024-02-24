@@ -28,6 +28,14 @@ pub inline fn isUsed(i: usize) bool {
     return !isFree(i);
 }
 
+pub inline fn countUsed() usize {
+    var count: usize = 0;
+    for (bitmap) |byte| {
+        count += 8 - @popCount(byte);
+    }
+    return count;
+}
+
 inline fn vaddrFromIdx(i: usize) usize {
     return @intFromPtr(bitmap.ptr) + 4096 * i;
 }
