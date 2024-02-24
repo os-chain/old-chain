@@ -1,45 +1,45 @@
 const std = @import("std");
 
-const kernel_config = .{
-    .arch = std.Target.Cpu.Arch.x86_64,
-};
+const version = std.SemanticVersion.parse("0.1.0-dev") catch unreachable;
 
-const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0, .pre = "dev" };
-
-fn getFeatures(comptime arch: std.Target.Cpu.Arch) struct { add: std.Target.Cpu.Feature.Set, sub: std.Target.Cpu.Feature.Set } {
-    var add = std.Target.Cpu.Feature.Set.empty;
-    var sub = std.Target.Cpu.Feature.Set.empty;
-    switch (arch) {
-        .x86_64 => {
-            const Features = std.Target.x86.Feature;
-
-            add.addFeature(@intFromEnum(Features.soft_float));
-            sub.addFeature(@intFromEnum(Features.mmx));
-            sub.addFeature(@intFromEnum(Features.sse));
-            sub.addFeature(@intFromEnum(Features.sse2));
-            sub.addFeature(@intFromEnum(Features.avx));
-            sub.addFeature(@intFromEnum(Features.avx2));
-        },
-        else => @compileError(@tagName(arch) ++ "not implemented"),
-    }
-
-    return .{ .add = add, .sub = sub };
-}
-
-pub fn build(b: *std.Build) void {
-    const features = getFeatures(kernel_config.arch);
-
-    const target = b.resolveTargetQuery(.{
-        .cpu_arch = kernel_config.arch,
+pub fn getTarget(b: *std.Build, arch: std.Target.Cpu.Arch) !std.Build.ResolvedTarget {
+    return b.resolveTargetQuery(.{
+        .cpu_arch = arch,
         .os_tag = .freestanding,
         .abi = .none,
-        .cpu_features_add = features.add,
-        .cpu_features_sub = features.sub,
+        .cpu_features_add = switch (arch) {
+            .x86_64 => blk: {
+                var features = std.Target.Cpu.Feature.Set.empty;
+                features.addFeature(@intFromEnum(std.Target.x86.Feature.soft_float));
+                break :blk features;
+            },
+            else => return error.UnsupportedArch,
+        },
+        .cpu_features_sub = switch (arch) {
+            .x86_64 => blk: {
+                var features = std.Target.Cpu.Feature.Set.empty;
+                features.addFeature(@intFromEnum(std.Target.x86.Feature.mmx));
+                features.addFeature(@intFromEnum(std.Target.x86.Feature.sse));
+                features.addFeature(@intFromEnum(std.Target.x86.Feature.sse2));
+                features.addFeature(@intFromEnum(std.Target.x86.Feature.avx));
+                features.addFeature(@intFromEnum(std.Target.x86.Feature.avx2));
+                break :blk features;
+            },
+            else => return error.UnsupportedArch,
+        },
     });
+}
+
+pub fn build(b: *std.Build) !void {
+    const build_options = .{
+        .arch = b.option(std.Target.Cpu.Arch, "arch", "The architecture to build for") orelse b.host.result.cpu.arch,
+    };
+
+    const target = try getTarget(b, build_options.arch);
 
     const optimize = b.standardOptimizeOption(.{});
 
-    const limine_mod = b.dependency("limine", .{}).module("limine");
+    const limine_zig = b.dependency("limine_zig", .{}).module("limine");
 
     const kernel = b.addExecutable(.{
         .name = "kernel",
@@ -50,73 +50,82 @@ pub fn build(b: *std.Build) void {
         .code_model = .kernel,
         .pic = true,
     });
-    kernel.root_module.addImport("limine", limine_mod);
-    kernel.setLinkerScript(.{ .path = "kernel/linker-" ++ @tagName(kernel_config.arch) ++ ".ld" });
+    kernel.root_module.addImport("limine", limine_zig);
+    kernel.setLinkerScript(.{ .path = b.fmt("kernel/linker-{s}.ld", .{@tagName(build_options.arch)}) });
 
     const kernel_options = b.addOptions();
     kernel_options.addOption(std.SemanticVersion, "version", version);
-
     kernel.root_module.addOptions("options", kernel_options);
 
     const kernel_step = b.step("kernel", "Build the kernel");
     kernel_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
 
-    const limine_cmd = b.addSystemCommand(&.{
-        "bash", "-c",
-        \\rm -rf zig-cache/limine
-        \\git clone https://github.com/limine-bootloader/limine.git zig-cache/limine --branch=v5.x-branch-binary --depth=1
-        \\make -C zig-cache/limine
-    });
-    const limine_step = b.step("limine", "Download and build the limine bootloader");
-    limine_step.dependOn(&limine_cmd.step);
+    const limine = b.dependency("limine", .{});
 
-    const iso_cmd = b.addSystemCommand(&.{
-        "bash", "-c",
-        \\rm -rf zig-cache/iso_root
-        \\mkdir -p zig-cache/iso_root
-        \\cp -v zig-out/bin/kernel zig-cache/iso_root/kernel.elf
-        \\cp -v limine.cfg zig-cache/limine/limine-bios.sys zig-cache/limine/limine-bios-cd.bin zig-cache/limine/limine-uefi-cd.bin zig-cache/iso_root
-        \\mkdir -p zig-cache/iso_root/EFI/BOOT
-        \\cp -v zig-cache/limine/BOOTX64.EFI zig-cache/iso_root/EFI/BOOT
-        \\cp -v zig-cache/limine/BOOTIA32.EFI zig-cache/iso_root/EFI/BOOT
-        \\xorriso -as mkisofs -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label zig-cache/iso_root -o zig-out/bin/chain.iso
-        \\./zig-cache/limine/limine bios-install zig-out/bin/chain.iso
+    const limine_exe = b.addExecutable(.{
+        .name = "limine",
+        .target = b.host,
+        .optimize = .ReleaseSafe,
     });
-    iso_cmd.step.dependOn(limine_step);
-    iso_cmd.step.dependOn(kernel_step);
-    const iso_step = b.step("iso", "Build the ISO image");
-    iso_step.dependOn(&iso_cmd.step);
+    limine_exe.addCSourceFile(.{ .file = limine.path("limine.c"), .flags = &[_][]const u8{"-std=c99"} });
+    limine_exe.linkLibC();
+    const limine_exe_run = b.addRunArtifact(limine_exe);
+
+    const iso_tree = b.addWriteFiles();
+    _ = iso_tree.addCopyFile(kernel.getEmittedBin(), "kernel.elf");
+    _ = iso_tree.addCopyFile(.{ .path = "limine.cfg" }, "limine.cfg");
+    _ = iso_tree.addCopyFile(limine.path("limine-bios.sys"), "limine-bios.sys");
+    _ = iso_tree.addCopyFile(limine.path("limine-bios-cd.bin"), "limine-bios-cd.bin");
+    _ = iso_tree.addCopyFile(limine.path("limine-uefi-cd.bin"), "limine-uefi-cd.bin");
+    _ = iso_tree.addCopyFile(limine.path("BOOTX64.EFI"), "EFI/BOOT/BOOTX64.EFI");
+    _ = iso_tree.addCopyFile(limine.path("BOOTIA32.EFI"), "EFI/BOOT/BOOTIA32.EFI");
+
+    const iso_cmd = b.addSystemCommand(&.{"xorriso"});
+    iso_cmd.addArg("-as");
+    iso_cmd.addArg("mkisofs");
+    iso_cmd.addArg("-b");
+    iso_cmd.addArg("limine-bios-cd.bin");
+    iso_cmd.addArg("-no-emul-boot");
+    iso_cmd.addArg("-boot-load-size");
+    iso_cmd.addArg("4");
+    iso_cmd.addArg("-boot-info-table");
+    iso_cmd.addArg("--efi-boot");
+    iso_cmd.addArg("limine-uefi-cd.bin");
+    iso_cmd.addArg("-efi-boot-part");
+    iso_cmd.addArg("--efi-boot-image");
+    iso_cmd.addArg("--protective-msdos-label");
+    iso_cmd.addDirectoryArg(iso_tree.getDirectory());
+    iso_cmd.addArg("-o");
+    const xorriso_iso_output = iso_cmd.addOutputFileArg("chain.iso");
+
+    limine_exe_run.addArg("bios-install");
+    limine_exe_run.addFileArg(xorriso_iso_output);
+
+    const iso_output_dir = b.addWriteFiles();
+    iso_output_dir.step.dependOn(&limine_exe_run.step);
+    const iso_output = iso_output_dir.addCopyFile(xorriso_iso_output, "chain.iso");
+
+    const iso_step = b.step("iso", "Create an ISO image");
+    iso_step.dependOn(&b.addInstallFile(iso_output, "chain.iso").step);
     b.default_step = iso_step;
 
-    const qemu_cmd = b.addSystemCommand(switch (kernel_config.arch) {
-        .x86_64 => &.{
-            "qemu-system-x86_64",
-            "-M",
-            "q35",
-            "-m",
-            "2G",
-            "-cdrom",
-            "zig-out/bin/chain.iso",
-            "-boot",
-            "d",
-            "-debugcon",
-            "stdio",
+    const qemu_cmd = b.addSystemCommand(&.{switch (build_options.arch) {
+        .x86_64 => "qemu-system-x86_64",
+        else => return error.UnsupportedArch,
+    }});
+
+    switch (build_options.arch) {
+        .x86_64 => {
+            qemu_cmd.addArgs(&.{ "-M", "q35" });
+            qemu_cmd.addArgs(&.{ "-m", "2G" });
+            qemu_cmd.addArg("-cdrom");
+            qemu_cmd.addFileArg(iso_output);
+            qemu_cmd.addArgs(&.{ "-boot", "d" });
+            qemu_cmd.addArgs(&.{ "-debugcon", "stdio" });
         },
-        else => |other| @compileError(@tagName(other) ++ " not implemented"),
-    });
-    qemu_cmd.step.dependOn(iso_step);
+        else => return error.UnsupportedArch,
+    }
 
-    const qemu_step = b.step("qemu", "Run inside QEMU");
+    const qemu_step = b.step("qemu", "Run in QEMU");
     qemu_step.dependOn(&qemu_cmd.step);
-
-    const kernel_unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "kernel/src/main.zig" },
-        .optimize = optimize,
-    });
-    kernel_unit_tests.root_module.addOptions("options", kernel_options);
-
-    const run_kernel_unit_tests = b.addRunArtifact(kernel_unit_tests);
-
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_kernel_unit_tests.step);
 }
