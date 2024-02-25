@@ -39,6 +39,34 @@ pub fn build(b: *std.Build) !void {
 
     const optimize = b.standardOptimizeOption(.{});
 
+    var tools = std.StringHashMap(*std.Build.Step.Compile).init(b.allocator);
+    defer tools.deinit();
+    const tools_dir = try b.build_root.handle.openDir("tools", .{ .iterate = true });
+    var tools_iter = tools_dir.iterate();
+    while (try tools_iter.next()) |tool| {
+        const name = std.fs.path.stem(tool.name);
+        const exe = b.addExecutable(.{
+            .name = name,
+            .target = b.host,
+            .root_source_file = .{ .path = b.fmt("tools/{s}.zig", .{name}) },
+            .optimize = .ReleaseSafe,
+        });
+
+        const exe_step = b.step(name, b.fmt("Build {s}", .{name}));
+        exe_step.dependOn(&exe.step);
+
+        try tools.put(name, exe);
+
+        const run_cmd = b.addRunArtifact(exe);
+
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+
+        const run_step = b.step(b.fmt("run-{s}", .{name}), b.fmt("Run {s}", .{name}));
+        run_step.dependOn(&run_cmd.step);
+    }
+
     const limine_zig = b.dependency("limine_zig", .{}).module("limine");
 
     const kernel = b.addExecutable(.{
@@ -60,6 +88,27 @@ pub fn build(b: *std.Build) !void {
     const kernel_step = b.step("kernel", "Build the kernel");
     kernel_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
 
+    const base_dir = try b.build_root.handle.openDir("base", .{ .iterate = true });
+    const initrd_cmd = b.addRunArtifact(tools.get("crofs-utils").?);
+    initrd_cmd.addArg("create");
+    const initrd = initrd_cmd.addOutputFileArg("initrd");
+    initrd_cmd.addDirectoryArg(.{
+        .path = try base_dir.realpathAlloc(b.allocator, "."),
+    });
+    var walker = try base_dir.walk(b.allocator);
+    defer walker.deinit();
+    var initrd_files_list = std.ArrayList([]const u8).init(b.allocator);
+    defer initrd_files_list.deinit();
+    while (try walker.next()) |entry| {
+        if (entry.kind == .file) {
+            try initrd_files_list.append(try base_dir.realpathAlloc(b.allocator, entry.path));
+        }
+    }
+    initrd_cmd.extra_file_dependencies = try b.allocator.dupe([]const u8, initrd_files_list.items);
+
+    const initrd_step = b.step("initrd", "Build the initrd");
+    initrd_step.dependOn(&b.addInstallFile(initrd, "initrd").step);
+
     const limine = b.dependency("limine", .{});
 
     const limine_exe = b.addExecutable(.{
@@ -73,6 +122,7 @@ pub fn build(b: *std.Build) !void {
 
     const iso_tree = b.addWriteFiles();
     _ = iso_tree.addCopyFile(kernel.getEmittedBin(), "kernel.elf");
+    _ = iso_tree.addCopyFile(initrd, "initrd");
     _ = iso_tree.addCopyFile(.{ .path = "limine.cfg" }, "limine.cfg");
     _ = iso_tree.addCopyFile(limine.path("limine-bios.sys"), "limine-bios.sys");
     _ = iso_tree.addCopyFile(limine.path("limine-bios-cd.bin"), "limine-bios-cd.bin");
