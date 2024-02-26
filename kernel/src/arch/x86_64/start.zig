@@ -11,6 +11,7 @@ const vfs = @import("../../fs/vfs.zig");
 const devfs = @import("../../fs/devfs.zig");
 const initrd = @import("../../initrd.zig");
 const crofs = @import("../../fs/crofs.zig");
+const framebuffer = @import("../../framebuffer.zig");
 
 const log = std.log.scoped(.core);
 
@@ -43,8 +44,8 @@ fn init() !void {
     try devfs.init();
     try initrd.init();
     try crofs.init();
-
     try vfs.mountDevice("/dev/initrd", "/");
+    try framebuffer.init();
 
     {
         var gpa = std.heap.GeneralPurposeAllocator(.{}){};
