@@ -2,10 +2,14 @@ const std = @import("std");
 
 const log = std.log.scoped(.vfs);
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa.allocator();
+var allocator: std.mem.Allocator = undefined;
 
-var mountpoints: std.StringHashMap(*Node) = undefined;
+pub const Mountpoint = struct {
+    node: *Node,
+    arena: ?*std.heap.ArenaAllocator,
+};
+
+var mountpoints: std.StringHashMap(Mountpoint) = undefined;
 
 var file_systems: std.ArrayList(FileSystem) = undefined;
 
@@ -200,11 +204,13 @@ pub const Node = struct {
 /// The root node of the whole VFS.
 var root: *Node = undefined;
 
-pub fn init() !void {
+pub fn init(alloc: std.mem.Allocator) !void {
     log.debug("Initializing...", .{});
     defer log.debug("Initialization done", .{});
 
-    mountpoints = std.StringHashMap(*Node).init(allocator);
+    allocator = alloc;
+
+    mountpoints = std.StringHashMap(Mountpoint).init(allocator);
     file_systems = std.ArrayList(FileSystem).init(allocator);
 
     root = try allocator.create(Node);
@@ -216,6 +222,12 @@ pub fn init() !void {
     });
 }
 
+pub fn deinit() void {
+    mountpoints.deinit();
+    file_systems.deinit();
+    allocator.destroy(root);
+}
+
 pub const MountNodeError = error{ AlreadyMounted, NotAbsolute, NotNormalized } || std.mem.Allocator.Error;
 
 pub fn mountNode(node: *Node, path: []const u8) MountNodeError!void {
@@ -224,10 +236,12 @@ pub fn mountNode(node: *Node, path: []const u8) MountNodeError!void {
 
     log.debug("Mounting at {s}", .{path});
 
-    if (mountpoints.get(path) != null) return error.AlreadyMounted;
+    if (mountpoints.contains(path)) return error.AlreadyMounted;
 
-    const path_dupe = try allocator.dupe(u8, path);
-    try mountpoints.put(path_dupe, node);
+    try mountpoints.put(path, .{
+        .node = node,
+        .arena = null,
+    });
 }
 
 pub const UnmountNodeError = error{ NotMounted, NotAbsolute, NotNormalized };
@@ -236,9 +250,18 @@ pub fn unmountNode(path: []const u8) UnmountNodeError!void {
     if (!std.fs.path.isAbsolutePosix(path)) return error.NotAbsolute;
     if (path[path.len - 1] == '/' and path.len != 1) return error.NotNormalized;
 
-    if (mountpoints.getKey(path)) |key| {
+    if (mountpoints.getEntry(path)) |entry| {
+        log.debug("Unmounting {s}", .{entry.key_ptr.*});
+
+        if (entry.value_ptr.*.arena) |arena| {
+            log.debug("Deinitializing arena allocator", .{});
+            arena.deinit();
+            allocator.destroy(arena);
+        } else {
+            log.debug("No arena allocator to deinitialize", .{});
+        }
+
         std.debug.assert(mountpoints.remove(path));
-        allocator.free(key);
     } else return error.NotMounted;
 }
 
@@ -253,8 +276,11 @@ pub fn mountDevice(dev_path: []const u8, dest_path: []const u8) MountDeviceError
     }
     if (detected_fs) |fs| {
         log.debug("{s} was detected to be {s}", .{ dev_path, fs.getName() });
-        const node = try fs.openDevice(allocator, dev);
+        const arena = try allocator.create(std.heap.ArenaAllocator);
+        arena.* = std.heap.ArenaAllocator.init(allocator);
+        const node = try fs.openDevice(arena.allocator(), dev);
         try mountNode(node, dest_path);
+        mountpoints.getPtr(dest_path).?.arena = arena;
     } else return error.UnknownFileSystem;
 }
 
@@ -287,7 +313,7 @@ pub fn openPath(path: []const u8) OpenPathError!*Node {
     var node = root;
 
     if (mountpoints.get("/")) |mountpoint| {
-        node = mountpoint;
+        node = mountpoint.node;
     }
 
     while (iter.next()) |component| {
@@ -296,11 +322,11 @@ pub fn openPath(path: []const u8) OpenPathError!*Node {
             .directory => {
                 const child_count = node.childCount();
                 const buffer = try allocator.alloc(*Node, child_count);
-                node.readDir(0, buffer);
                 defer allocator.free(buffer);
+                node.readDir(0, buffer);
                 if (!match: {
                     if (mountpoints.get(component.path)) |mountpoint| {
-                        node = mountpoint;
+                        node = mountpoint.node;
                         break :match true;
                     }
                     for (buffer) |child| {

@@ -3,14 +3,13 @@ const limine = @import("limine");
 const vfs = @import("fs/vfs.zig");
 const devfs = @import("fs/devfs.zig");
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa.allocator();
-
 const log = std.log.scoped(.framebuffer);
 
 pub export var fb_req = limine.FramebufferRequest{};
 
 var framebuffers: []*limine.Framebuffer = &.{};
+
+var allocator: std.mem.Allocator = undefined;
 
 const FramebufferMask = struct {
     red_offset: u8,
@@ -67,9 +66,11 @@ fn write(node: *vfs.Node, offset: u64, buffer: []const u8) u64 {
     return bytes_to_write;
 }
 
-pub fn init() !void {
+pub fn init(alloc: std.mem.Allocator) !void {
     log.debug("Initializing...", .{});
     defer log.debug("Initialization done", .{});
+
+    allocator = alloc;
 
     if (fb_req.response) |fb_res| {
         framebuffers = fb_res.framebuffers();
@@ -114,6 +115,20 @@ pub fn init() !void {
             try devfs.addDevice(node);
         }
     } else log.warn("No framebuffers found (no response)", .{});
+}
+
+pub fn deinit() void {
+    for (0..count()) |i| {
+        log.debug("Deinitializing fb{d}", .{i});
+        const maybe_name = std.fmt.allocPrint(allocator, "fb{d}", .{i}) catch null;
+        if (maybe_name) |name| {
+            defer allocator.free(name);
+            if (devfs.getDevice(name)) |node| {
+                devfs.removeDevice(name) catch unreachable;
+                allocator.destroy(node);
+            } else log.warn("Couldn't unmount device {s} (not found)", .{name});
+        } else log.err("Couldn't allocate memory for deinitializing fb{d} (unable to generate expected name)", .{i});
+    }
 }
 
 // Return the number of framebuffers

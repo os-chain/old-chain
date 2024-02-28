@@ -5,16 +5,18 @@ const devfs = @import("fs/devfs.zig");
 
 pub export var mod_req = limine.ModuleRequest{};
 
-const log = std.log.scoped(.initrd);
+var allocator: std.mem.Allocator = undefined;
+var node: *vfs.Node = undefined;
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa.allocator();
+const log = std.log.scoped(.initrd);
 
 var mod: *limine.File = undefined;
 
-pub fn init() !void {
+pub fn init(alloc: std.mem.Allocator) !void {
     log.debug("Initializing...", .{});
     defer log.debug("Initialization done", .{});
+
+    allocator = alloc;
 
     if (mod_req.response) |mod_res| {
         mod = blk: {
@@ -28,7 +30,7 @@ pub fn init() !void {
             return error.NoInitrd;
         };
 
-        const node = try allocator.create(vfs.Node);
+        node = try allocator.create(vfs.Node);
         node.* = vfs.Node.create(.{
             .name = "initrd",
             .inode = 0,
@@ -38,6 +40,10 @@ pub fn init() !void {
         });
         try devfs.addDevice(node);
     } else return error.NoInitrd;
+}
+
+pub fn deinit() void {
+    allocator.destroy(node);
 }
 
 fn read(_: *vfs.Node, offset: u64, buffer: []u8) u64 {

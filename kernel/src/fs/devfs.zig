@@ -1,20 +1,22 @@
 const std = @import("std");
 const vfs = @import("vfs.zig");
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa.allocator();
-
 const log = std.log.scoped(.devfs);
 
+var allocator: std.mem.Allocator = undefined;
+
+var root: *vfs.Node = undefined;
 var devices: std.ArrayList(*vfs.Node) = undefined;
 
-pub fn init() !void {
+pub fn init(alloc: std.mem.Allocator) !void {
     log.debug("Initializing...", .{});
     defer log.debug("Initialization done", .{});
 
+    allocator = alloc;
+
     devices = std.ArrayList(*vfs.Node).init(allocator);
 
-    const root = try allocator.create(vfs.Node);
+    root = try allocator.create(vfs.Node);
     root.* = vfs.Node.create(.{
         .name = "dev",
         .inode = 0,
@@ -29,6 +31,8 @@ pub fn init() !void {
 
 pub fn deinit() void {
     devices.deinit();
+    vfs.unmountNode("/dev") catch |err| log.warn("Couldn't unmount /dev ({s})", .{@errorName(err)});
+    allocator.destroy(root);
 }
 
 fn childCount(_: *vfs.Node) u64 {
@@ -47,4 +51,25 @@ pub fn addDevice(node: *vfs.Node) !void {
     }
 
     try devices.append(node);
+}
+
+pub fn getDevice(name: []const u8) ?*vfs.Node {
+    for (devices.items) |dev| {
+        if (std.mem.eql(u8, dev.getName(), name)) {
+            return dev;
+        }
+    }
+
+    return null;
+}
+
+pub fn removeDevice(name: []const u8) error{NotFound}!void {
+    for (devices.items, 0..) |dev, i| {
+        if (std.mem.eql(u8, dev.getName(), name)) {
+            _ = devices.swapRemove(i);
+            return;
+        }
+    }
+
+    return error.NotFound;
 }

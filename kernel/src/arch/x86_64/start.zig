@@ -15,6 +15,9 @@ const framebuffer = @import("../../framebuffer.zig");
 
 const log = std.log.scoped(.core);
 
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+const allocator = gpa.allocator();
+
 comptime {
     if (!builtin.is_test) {
         @export(_start, .{ .name = "_start" });
@@ -29,6 +32,13 @@ fn _start() callconv(.C) noreturn {
     init() catch |e| switch (e) {
         inline else => |err| @panic("Error: " ++ @errorName(err)),
     };
+    deinit();
+
+    switch (gpa.deinit()) {
+        .ok => log.debug("No memory leaked", .{}),
+        .leak => log.err("Memory leaked", .{}),
+    }
+
     cpu.halt();
 }
 
@@ -40,19 +50,18 @@ fn init() !void {
     paging.init();
     pmm.init();
     try acpi.init();
-    try vfs.init();
-    try devfs.init();
-    try initrd.init();
+    try vfs.init(allocator);
+    try devfs.init(allocator);
+    try initrd.init(allocator);
     try crofs.init();
     try vfs.mountDevice("/dev/initrd", "/");
-    try framebuffer.init();
+    try framebuffer.init(allocator);
 
     {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        const allocator = gpa.allocator();
         const motd = try vfs.openPath("/etc/motd");
         defer motd.close();
         var buffer = try allocator.alloc(u8, motd.length);
+        defer allocator.free(buffer);
         const read_bytes = motd.read(0, buffer);
         log.debug("MOTD: \"{s}\"", .{buffer[0..read_bytes]});
     }
@@ -60,6 +69,17 @@ fn init() !void {
     log.debug("Initalization used {} pages", .{pmm.countUsed()});
 
     log.info("Hello from chain", .{});
+}
+
+fn deinit() void {
+    log.debug("Deinitializing...", .{});
+    defer log.debug("Deinitialization done", .{});
+
+    framebuffer.deinit();
+    vfs.unmountNode("/") catch unreachable;
+    initrd.deinit();
+    devfs.deinit();
+    vfs.deinit();
 }
 
 test {
