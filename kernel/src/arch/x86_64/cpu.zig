@@ -61,6 +61,13 @@ pub inline fn lgdt(gdtd: *const gdt.Gdtd) void {
     );
 }
 
+pub inline fn ltr(selector: u16) void {
+    asm volatile ("ltr %[selector]"
+        :
+        : [selector] "r" (selector),
+    );
+}
+
 pub const CpuidResult = struct {
     rax: u64,
     rbx: u64,

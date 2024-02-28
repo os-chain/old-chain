@@ -12,6 +12,7 @@ const devfs = @import("../../fs/devfs.zig");
 const initrd = @import("../../initrd.zig");
 const crofs = @import("../../fs/crofs.zig");
 const framebuffer = @import("../../framebuffer.zig");
+const tss = @import("tss.zig");
 
 const log = std.log.scoped(.core);
 
@@ -49,6 +50,7 @@ fn init() !void {
     int.init();
     paging.init();
     pmm.init();
+    tss.init();
     try acpi.init();
     try vfs.init(allocator);
     try devfs.init(allocator);

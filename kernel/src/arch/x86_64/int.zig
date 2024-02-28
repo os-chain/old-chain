@@ -142,7 +142,7 @@ pub fn init() void {
         const i: u8 = @truncate(i_raw);
         if (getVector(i)) |vector| {
             idt[i] = .{
-                .segment = gdt.kcode_64,
+                .segment = gdt.selectors.kcode_64,
                 .ist = 0,
                 .type = switch (i) {
                     0...31 => .trap,
