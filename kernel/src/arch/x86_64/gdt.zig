@@ -47,8 +47,8 @@ pub const selectors = .{
     .kdata_32 = 0x20,
     .kcode_64 = 0x28,
     .kdata_64 = 0x30,
-    .ucode_64 = 0x38 | 0x03,
-    .udata_64 = 0x40 | 0x03,
+    .udata_64 = 0x38 | 0x03,
+    .ucode_64 = 0x40 | 0x03,
     .tss = 0x48,
 };
 
@@ -174,14 +174,14 @@ var gdt = [_]Entry{
         .access = .{
             .read_write = true,
             .direction_conforming = false,
-            .executable = true,
+            .executable = false,
             .type = .normal,
             .dpl = 3,
             .present = true,
         },
         .limit_b = 0,
         .flags = .{
-            .long_code = true,
+            .long_code = false,
             .size = false,
             .granularity = false,
         },
@@ -193,14 +193,14 @@ var gdt = [_]Entry{
         .access = .{
             .read_write = true,
             .direction_conforming = false,
-            .executable = false,
+            .executable = true,
             .type = .normal,
             .dpl = 3,
             .present = true,
         },
         .limit_b = 0,
         .flags = .{
-            .long_code = false,
+            .long_code = true,
             .size = false,
             .granularity = false,
         },
@@ -223,7 +223,26 @@ pub fn init() void {
     };
 
     log.debug("Loading GDT...", .{});
+    const gs_base = cpu.Msr.read(.GS_BASE);
     cpu.lgdt(&gdtd);
+    asm volatile (
+        \\push %[kcode]
+        \\lea 1f(%%rip), %%rax
+        \\push %%rax
+        \\lretq
+        \\1:
+        \\mov %[kdata], %%eax
+        \\mov %%eax, %%ds
+        \\mov %%rax, %%es
+        \\mov %%rax, %%fs
+        \\mov %%rax, %%gs
+        \\mov %%rax, %%ss
+        :
+        : [kcode] "i" (selectors.kcode_64),
+          [kdata] "i" (selectors.kdata_64),
+        : "rax", "rcx", "memory"
+    );
+    cpu.Msr.write(.GS_BASE, gs_base);
     log.debug("GDT loaded", .{});
 }
 

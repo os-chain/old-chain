@@ -117,7 +117,7 @@ fn accepts(device: *vfs.Node) bool {
     return false;
 }
 
-fn parseFile(allocator: std.mem.Allocator, list: *std.ArrayList(*vfs.Node), reader: std.io.AnyReader, next_inode: *u64, ctx: *Ctx, offset: usize) !void {
+fn parseFile(allocator: std.mem.Allocator, list: *std.ArrayList(*vfs.Node), reader: std.io.AnyReader, next_inode: *u64, ctx: *Ctx, offset: usize) !usize {
     const name_len = reader.readByte() catch return error.CorruptedFileSystem;
     if (name_len == 0) return error.CorruptedFileSystem;
     const name = try allocator.alloc(u8, name_len);
@@ -141,9 +141,12 @@ fn parseFile(allocator: std.mem.Allocator, list: *std.ArrayList(*vfs.Node), read
     });
     try list.append(node);
     std.debug.assert(list.items.len == inode + 1);
+
+    return offset + 9 + name_len + length;
 }
 
-fn parseDir(allocator: std.mem.Allocator, list: *std.ArrayList(*vfs.Node), reader: std.io.AnyReader, next_inode: *u64, is_root: bool, ctx: *Ctx, offset: usize) !void {
+fn parseDir(allocator: std.mem.Allocator, list: *std.ArrayList(*vfs.Node), reader: std.io.AnyReader, next_inode: *u64, is_root: bool, ctx: *Ctx, start_offset: usize) !usize {
+    var offset = start_offset;
     const name_len = reader.readByte() catch return error.CorruptedFileSystem;
     if ((is_root and name_len != 0) or (!is_root and name_len == 0)) return error.CorruptedFileSystem;
     const name = if (is_root) "" else (try allocator.alloc(u8, name_len));
@@ -168,14 +171,19 @@ fn parseDir(allocator: std.mem.Allocator, list: *std.ArrayList(*vfs.Node), reade
     try list.append(node);
     std.debug.assert(list.items.len == inode + 1);
 
+    offset += 2 + name_len;
+
     for (0..child_count) |_| {
         const file_type = reader.readByte() catch return error.CorruptedFileSystem;
+        offset += 1;
         switch (file_type) {
-            0x01 => try parseFile(allocator, list, reader, next_inode, ctx, offset + 3 + name_len),
-            0x02 => try parseDir(allocator, list, reader, next_inode, false, ctx, offset + 3 + name_len),
+            0x01 => offset = try parseFile(allocator, list, reader, next_inode, ctx, offset),
+            0x02 => offset = try parseDir(allocator, list, reader, next_inode, false, ctx, offset),
             else => return error.CorruptedFileSystem,
         }
     }
+
+    return offset;
 }
 
 fn openDevice(allocator: std.mem.Allocator, device: *vfs.Node) !*vfs.Node {
@@ -200,7 +208,7 @@ fn openDevice(allocator: std.mem.Allocator, device: *vfs.Node) !*vfs.Node {
         .device = device,
         .node_list = node_list,
     };
-    try parseDir(allocator, node_list, reader, &next_inode, true, ctx, 8);
+    _ = try parseDir(allocator, node_list, reader, &next_inode, true, ctx, 8);
     _ = (reader.readByte() catch { // We should be at EOF
         return node_list.items[0];
     });

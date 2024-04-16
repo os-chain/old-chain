@@ -115,6 +115,13 @@ pub const Exception = enum(u8) {
             .CP => "Control Protection Exception",
         };
     }
+
+    pub inline fn hasErrorCode(self: Exception) bool {
+        return switch (self) {
+            .DE, .DB, .BP, .OF, .BR, .UD, .NM, .MF, .MC, .XM, .VE => false,
+            .DF, .TS, .NP, .SS, .GP, .PF, .AC, .CP => true,
+        };
+    }
 };
 
 var idtd: Idtd = .{
@@ -143,12 +150,12 @@ pub fn init() void {
         if (getVector(i)) |vector| {
             idt[i] = .{
                 .segment = gdt.selectors.kcode_64,
-                .ist = 0,
+                .ist = 1,
                 .type = switch (i) {
                     0...31 => .trap,
                     32...255 => .interrupt,
                 },
-                .ring = 0,
+                .ring = 3,
                 .present = true,
 
                 .offset_low = undefined,
@@ -169,22 +176,113 @@ pub fn init() void {
     log.debug("Interrupts enabled", .{});
 }
 
-fn getVector(comptime i: u8) ?*const fn () callconv(.Interrupt) void {
-    return switch (i) {
-        inline 0, 1, 3...8, 10...14, 16...21 => |exception_i| blk: {
-            const exception: Exception = @enumFromInt(exception_i);
-            break :blk struct {
-                fn vector() callconv(.Interrupt) void {
-                    log.err(std.fmt.comptimePrint("Exception: {s}[{d}] ({s})", .{ exception.getMnemonic(), exception_i, exception.getDescription() }), .{});
-                    cpu.halt();
-                }
-            }.vector;
-        },
-        2, 9, 15, 22...31 => null,
-        inline else => |int_i| struct {
-            fn vector() callconv(.Interrupt) void {
-                log.debug(std.fmt.comptimePrint("Interrupt {d} dispatched", .{int_i}), .{});
+fn getVector(comptime i: u8) ?*const fn () callconv(.Naked) void {
+    return struct {
+        fn f() callconv(.Naked) void {
+            switch (i) {
+                inline 0, 1, 3...8, 10...14, 16...21 => |exception_i| {
+                    const exception: Exception = comptime @enumFromInt(exception_i);
+                    asm volatile (if (!exception.hasErrorCode()) "push $0\n" else "" ++
+                            \\push %[i]
+                            \\jmp interruptCommon
+                        :
+                        : [i] "i" (i),
+                    );
+                },
+                inline else => {
+                    asm volatile (
+                        \\push $0
+                        \\push %[i]
+                        \\jmp interruptCommon
+                        :
+                        : [i] "i" (i),
+                    );
+                },
             }
-        }.vector,
-    };
+        }
+    }.f;
+}
+
+export fn interruptCommon() callconv(.Naked) void {
+    asm volatile (
+        \\push %%rax
+        \\push %%rbx
+        \\push %%rcx
+        \\push %%rdx
+        \\push %%rbp
+        \\push %%rsi
+        \\push %%rdi
+        \\push %%r8
+        \\push %%r9
+        \\push %%r10
+        \\push %%r11
+        \\push %%r12
+        \\push %%r13
+        \\push %%r14
+        \\push %%r15
+        \\mov %%ds, %%rax
+        \\push %%rax
+        \\mov %%es, %%rax
+        \\push %%rax
+        \\mov %%rsp, %%rdi
+        \\mov %[kdata], %%ax
+        \\mov %%ax, %%es
+        \\mov %%ax, %%ds
+        \\call interruptHandler
+        \\pop %%rax
+        \\mov %%rax, %%es
+        \\pop %%rax
+        \\mov %%rax, %%ds
+        \\pop %%r15
+        \\pop %%r14
+        \\pop %%r13
+        \\pop %%r12
+        \\pop %%r11
+        \\pop %%r10
+        \\pop %%r9
+        \\pop %%r8
+        \\pop %%rdi
+        \\pop %%rsi
+        \\pop %%rbp
+        \\pop %%rdx
+        \\pop %%rcx
+        \\pop %%rbx
+        \\pop %%rax
+        \\add $16, %%rsp
+        \\iretq
+        :
+        : [kdata] "i" (gdt.selectors.kdata_64),
+    );
+}
+
+export fn interruptHandler(frame: *cpu.ContextFrame) void {
+    frame.int_num &= 0xFF;
+
+    switch (frame.int_num) {
+        inline 0, 1, 3...8, 10...14, 16...21 => |exception_i| {
+            const exception: Exception = @enumFromInt(exception_i);
+
+            log.err("Exception: {s} ({s})" ++
+                if (exception.hasErrorCode())
+                " err=0x{x}"
+            else
+                "", .{ exception.getMnemonic(), exception.getDescription() } ++
+                if (exception.hasErrorCode())
+                .{frame.err}
+            else
+                .{});
+
+            switch (exception) {
+                .PF => {
+                    log.debug("cr2=0x{x}", .{cpu.Cr2.read()});
+                },
+                else => {},
+            }
+
+            cpu.halt();
+        },
+        else => |i| {
+            log.debug("Unhandled interrupt {d}", .{i});
+        },
+    }
 }

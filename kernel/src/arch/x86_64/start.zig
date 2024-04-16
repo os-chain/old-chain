@@ -13,6 +13,8 @@ const initrd = @import("../../initrd.zig");
 const crofs = @import("../../fs/crofs.zig");
 const framebuffer = @import("../../framebuffer.zig");
 const tss = @import("tss.zig");
+const syscall = @import("syscall.zig");
+const task = @import("task.zig");
 
 const log = std.log.scoped(.core);
 
@@ -50,7 +52,8 @@ fn init() !void {
     int.init();
     paging.init();
     pmm.init();
-    tss.init();
+    try tss.init(allocator);
+    syscall.init();
     try acpi.init();
     try vfs.init(allocator);
     try devfs.init(allocator);
@@ -58,19 +61,11 @@ fn init() !void {
     try crofs.init();
     try vfs.mountDevice("/dev/initrd", "/");
     try framebuffer.init(allocator);
-
-    {
-        const motd = try vfs.openPath("/etc/motd");
-        defer motd.close();
-        var buffer = try allocator.alloc(u8, motd.length);
-        defer allocator.free(buffer);
-        const read_bytes = motd.read(0, buffer);
-        log.debug("MOTD: \"{s}\"", .{buffer[0..read_bytes]});
-    }
+    try task.init(allocator);
 
     log.debug("Initalization used {} pages", .{pmm.countUsed()});
 
-    log.info("Hello from chain", .{});
+    try task.runRoot(allocator, "/bin/init");
 }
 
 fn deinit() void {
