@@ -99,10 +99,6 @@ fn startCpu() callconv(.C) noreturn {
 }
 
 fn init() !void {
-    if (!options.enable_smp and smp.cpuid() != 0) {
-        hal.halt();
-    }
-
     if (smp.cpuid() == 0) {
         arch.initCpuBarebones();
         pmm.init();

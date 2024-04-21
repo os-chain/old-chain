@@ -68,6 +68,7 @@ pub fn init(comptime jmp: fn () callconv(.C) noreturn) noreturn {
 
             const wrapper = struct {
                 fn f(info: *limine.SmpInfo) callconv(.C) noreturn {
+                    if (!options.enable_smp) hal.halt();
                     switch (builtin.cpu.arch) {
                         .x86_64 => @import("arch/x86_64/cpu.zig").Msr.write(.KERNEL_GS_BASE, @intFromPtr(&cores_buf[0..core_count][info.processor_id])),
                         else => |other| @compileError(@tagName(other) ++ " not supported"),
@@ -83,7 +84,7 @@ pub fn init(comptime jmp: fn () callconv(.C) noreturn) noreturn {
     } else @panic("No SMP bootloader response");
 
     switch (builtin.cpu.arch) {
-        .x86_64 => @import("arch/x86_64/cpu.zig").Msr.write(.KERNEL_GS_BASE, @intFromPtr(&cores_buf[0..core_count][0])),
+        .x86_64 => @import("arch/x86_64/cpu.zig").Msr.write(.KERNEL_GS_BASE, @intFromPtr(&cores_buf[0])),
         else => |other| @compileError(@tagName(other) ++ " not supported"),
     }
     jmp();
