@@ -38,9 +38,6 @@ var log_lock = smp.SpinLock{};
 pub fn logFn(comptime message_level: std.log.Level, comptime scope: @Type(.EnumLiteral), comptime format: []const u8, args: anytype) void {
     log_lock.lock();
     defer log_lock.unlock();
-    var log_allocator_buf: [4096 * 8]u8 = undefined;
-    var log_fba = std.heap.FixedBufferAllocator.init(&log_allocator_buf);
-    const log_allocator = log_fba.allocator();
 
     const prefix = "\x1b[90m(\x1b[1m{d}\x1b[0m\x1b[90m)\x1b[0m" ++ switch (message_level) {
         .info => "\x1b[34m",
@@ -49,16 +46,22 @@ pub fn logFn(comptime message_level: std.log.Level, comptime scope: @Type(.EnumL
         .debug => "\x1b[90m",
     } ++ "[" ++ @tagName(message_level) ++ "]\x1b[0m (" ++ @tagName(scope) ++ ")";
 
-    const msg = std.fmt.allocPrint(log_allocator, prefix ++ " " ++ format, .{smp.cpuid()} ++ args) catch "\x1b[31m\x1b[1m!!!LOG_FN_OOM!!!\x1b[0m";
+    const writer = std.io.GenericWriter(*const anyopaque, error{}, struct {
+        fn f(_: *const anyopaque, bytes: []const u8) error{}!usize {
+            for (bytes) |char| {
+                hal.debugcon(char);
+                if (char == '\n') {
+                    for (0..prefix.len - 34) |_| hal.debugcon(' ');
+                    hal.debugcon('|');
+                    hal.debugcon(' ');
+                }
+            }
 
-    for (msg) |char| {
-        hal.debugcon(char);
-        if (char == '\n') {
-            for (0..prefix.len - 34) |_| hal.debugcon(' ');
-            hal.debugcon('|');
-            hal.debugcon(' ');
+            return bytes.len;
         }
-    }
+    }.f){ .context = undefined };
+
+    std.fmt.format(writer, prefix ++ " " ++ format, .{smp.cpuid()} ++ args) catch unreachable;
 
     hal.debugcon('\n');
 }
