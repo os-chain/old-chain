@@ -38,3 +38,7 @@ pub fn init(alloc: std.mem.Allocator) !void {
     log.debug("Writing TSS entry", .{});
     gdt.setTss(&tss);
 }
+
+pub fn deinit() void {
+    allocator.free(kernel_stack);
+}

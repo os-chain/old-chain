@@ -33,6 +33,10 @@ pub fn getKernelTarget(b: *std.Build, arch: std.Target.Cpu.Arch) !std.Build.Reso
 pub fn build(b: *std.Build) !void {
     const build_options = .{
         .arch = b.option(std.Target.Cpu.Arch, "arch", "The architecture to build for") orelse b.host.result.cpu.arch,
+        .emul_smp = b.option(usize, "emul_smp", "SMP (cores) to use for emulation") orelse 4,
+        .gdb = b.option(bool, "gdb", "Wait for a GDB connection when emulating") orelse false,
+        .enable_smp = b.option(bool, "enable_smp", "Build with SMP support") orelse false,
+        .max_cpus = b.option(usize, "max_cpus", "Maximum number of CPUs to support") orelse 256,
     };
 
     const kernel_target = try getKernelTarget(b, build_options.arch);
@@ -83,7 +87,10 @@ pub fn build(b: *std.Build) !void {
 
     const kernel_options = b.addOptions();
     kernel_options.addOption(std.SemanticVersion, "version", version);
+    kernel_options.addOption(usize, "max_cpus", build_options.max_cpus);
+    kernel_options.addOption(bool, "enable_smp", build_options.enable_smp);
     kernel.root_module.addOptions("options", kernel_options);
+    kernel.root_module.addAnonymousImport("font", .{ .root_source_file = .{ .path = "assets/vga8x16" } });
 
     const kernel_step = b.step("kernel", "Build the kernel");
     kernel_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
@@ -135,6 +142,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = .ReleaseSmall,
             .root_source_file = .{ .path = b.fmt("user/apps/{s}/main.zig", .{name}) },
         });
+        exe.setLinkerScript(.{ .path = b.fmt("user/linker-{s}.ld", .{@tagName(build_options.arch)}) });
 
         const objcopy = b.addObjCopy(exe.getEmittedBin(), .{
             .format = .bin,
@@ -206,6 +214,9 @@ pub fn build(b: *std.Build) !void {
             qemu_cmd.addFileArg(iso_output);
             qemu_cmd.addArgs(&.{ "-boot", "d" });
             qemu_cmd.addArgs(&.{ "-debugcon", "stdio" });
+            qemu_cmd.addArgs(&.{ "-smp", b.fmt("{d}", .{build_options.emul_smp}) });
+            if (optimize == .Debug) qemu_cmd.addArgs(&.{ "-d", "int", "-M", "smm=off" });
+            if (build_options.gdb) qemu_cmd.addArgs(&.{ "-s", "-S" });
         },
         else => return error.UnsupportedArch,
     }

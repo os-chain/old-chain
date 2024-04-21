@@ -263,16 +263,13 @@ export fn interruptHandler(frame: *cpu.ContextFrame) void {
             const exception: Exception = @enumFromInt(exception_i);
 
             log.err("Exception: {s} ({s})" ++
-                if (exception.hasErrorCode())
-                " err=0x{x}"
-            else
-                "", .{ exception.getMnemonic(), exception.getDescription() } ++
-                if (exception.hasErrorCode())
-                .{frame.err}
-            else
-                .{});
+                if (exception.hasErrorCode()) " err=0x{x}" else "", .{ exception.getMnemonic(), exception.getDescription() } ++
+                if (exception.hasErrorCode()) .{frame.err} else .{});
 
             switch (exception) {
+                .BP => {
+                    cpu.halt();
+                },
                 .PF => {
                     log.debug("cr2=0x{x}", .{cpu.Cr2.read()});
                 },

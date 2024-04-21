@@ -76,6 +76,30 @@ pub inline fn invlpg(addr: usize) void {
     );
 }
 
+pub inline fn getLowEflags() u16 {
+    return @truncate(asm volatile (
+        \\pushf
+        \\pop %[res]
+        : [res] "=r" (-> usize),
+    ));
+}
+
+pub inline fn getEflags() u32 {
+    return @truncate(asm volatile (
+        \\pushfd
+        \\pop %[res]
+        : [res] "=r" (-> usize),
+    ));
+}
+
+pub inline fn getRflags() u64 {
+    return asm volatile (
+        \\pushfq
+        \\pop %[res]
+        : [res] "=r" (-> usize),
+    );
+}
+
 pub const CpuidResult = struct {
     rax: u64,
     rbx: u64,
@@ -196,4 +220,5 @@ pub const ContextFrame = packed struct {
 pub const CoreInfo = packed struct {
     kernel_stack: u64,
     user_stack: u64,
+    id: u64,
 };

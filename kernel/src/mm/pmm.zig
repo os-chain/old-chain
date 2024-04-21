@@ -1,12 +1,15 @@
 const std = @import("std");
 const limine = @import("limine");
 const hal = @import("../hal.zig");
+const smp = @import("../smp.zig");
 
 pub export var mmap_req = limine.MemoryMapRequest{};
 
 const log = std.log.scoped(.pmm);
 
 var bitmap: []u8 = undefined;
+
+var lock = smp.SpinLock{};
 
 /// Mark a page as used, by index
 pub inline fn setUsed(i: usize) void {
@@ -89,6 +92,9 @@ pub fn init() void {
 }
 
 fn alloc(_: *anyopaque, n: usize, _: u8, _: usize) ?[*]u8 {
+    lock.lock();
+    lock.unlock();
+
     std.debug.assert(n > 0);
 
     const page_count = std.math.divCeil(usize, n, 4096) catch unreachable;
@@ -104,6 +110,8 @@ fn alloc(_: *anyopaque, n: usize, _: u8, _: usize) ?[*]u8 {
                 for (found_i..found_i + count) |j| {
                     setUsed(j);
                 }
+
+                log.debug("Allocating 0x{x}", .{vaddrFromIdx(found_i)});
                 return @ptrFromInt(vaddrFromIdx(found_i));
             }
         } else {
@@ -115,6 +123,11 @@ fn alloc(_: *anyopaque, n: usize, _: u8, _: usize) ?[*]u8 {
 }
 
 fn free(_: *anyopaque, buf: []u8, _: u8, _: usize) void {
+    lock.lock();
+    lock.unlock();
+
+    log.debug("Freeing 0x{x}", .{@intFromPtr(buf.ptr)});
+
     const i = idxFromVaddr(@intFromPtr(buf.ptr));
     const count = std.math.divCeil(usize, buf.len, 4096) catch unreachable;
     for (i..i + count) |j| {

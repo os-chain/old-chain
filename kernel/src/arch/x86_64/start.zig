@@ -1,85 +1,36 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const root = @import("root");
 const options = @import("options");
 const cpu = @import("cpu.zig");
 const gdt = @import("gdt.zig");
 const int = @import("int.zig");
 const paging = @import("paging.zig");
-const pmm = @import("../../mm/pmm.zig");
-const acpi = @import("../../acpi.zig");
-const vfs = @import("../../fs/vfs.zig");
-const devfs = @import("../../fs/devfs.zig");
-const initrd = @import("../../initrd.zig");
-const crofs = @import("../../fs/crofs.zig");
-const framebuffer = @import("../../framebuffer.zig");
 const tss = @import("tss.zig");
 const syscall = @import("syscall.zig");
-const task = @import("task.zig");
-
-const log = std.log.scoped(.core);
-
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa.allocator();
-
-comptime {
-    if (!builtin.is_test) {
-        @export(_start, .{ .name = "_start" });
-    }
-}
+const smp = @import("../../smp.zig");
 
 fn _start() callconv(.C) noreturn {
     cpu.cli();
 
     for (0..4) |_| cpu.outb(0xE9, '\n');
 
-    init() catch |e| switch (e) {
-        inline else => |err| @panic("Error: " ++ @errorName(err)),
-    };
-    deinit();
-
-    switch (gpa.deinit()) {
-        .ok => log.debug("No memory leaked", .{}),
-        .leak => log.err("Memory leaked", .{}),
-    }
+    root.start();
 
     cpu.halt();
 }
 
-fn init() !void {
-    log.info("Booting chain (v{})", .{options.version});
-
+pub fn initCpuBarebones() void {
     gdt.init();
     int.init();
     paging.init();
-    pmm.init();
+}
+
+pub fn initCpu(allocator: std.mem.Allocator) !void {
     try tss.init(allocator);
     syscall.init();
-    try acpi.init();
-    try vfs.init(allocator);
-    try devfs.init(allocator);
-    try initrd.init(allocator);
-    try crofs.init();
-    try vfs.mountDevice("/dev/initrd", "/");
-    try framebuffer.init(allocator);
-    try task.init(allocator);
-
-    log.debug("Initalization used {} pages", .{pmm.countUsed()});
-
-    try task.runRoot(allocator, "/bin/init");
 }
 
-fn deinit() void {
-    log.debug("Deinitializing...", .{});
-    defer log.debug("Deinitialization done", .{});
-
-    framebuffer.deinit();
-    vfs.unmountNode("/") catch unreachable;
-    initrd.deinit();
-    devfs.deinit();
-    vfs.deinit();
-}
-
-test {
-    _ = std.testing.refAllDeclsRecursive(int);
-    _ = std.testing.refAllDeclsRecursive(paging);
+pub fn deinit() void {
+    tss.deinit();
 }
