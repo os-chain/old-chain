@@ -65,6 +65,10 @@ pub fn logFn(comptime message_level: std.log.Level, comptime scope: @Type(.EnumL
 
 pub const std_options = .{
     .logFn = logFn,
+    .log_level = switch (builtin.mode) {
+        .Debug => .debug,
+        else => .info,
+    },
 };
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
