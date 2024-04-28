@@ -27,6 +27,8 @@ pub const Task = struct {
     arena: std.heap.ArenaAllocator,
     files: std.ArrayListUnmanaged(?*vfs.Node) = .{},
     context: hal.ContextFrame,
+    parent: ?Pid,
+    children: std.ArrayListUnmanaged(Pid) = .{},
 };
 
 pub fn init(alloc: std.mem.Allocator) !void {
@@ -64,6 +66,7 @@ pub fn addRoot(path: []const u8) !void {
         .arena = std.heap.ArenaAllocator.init(allocator),
         .page_table = undefined,
         .context = undefined,
+        .parent = null,
     };
 
     const arena = task.arena.allocator();
@@ -166,11 +169,33 @@ fn nextTask() void {
     current = next_pid;
 }
 
+fn deleteTask(pid: Pid) void {
+    tasks.items[pid] = null;
+
+    if (current == pid) current = null;
+    for (queue.readableSlice(0), 0..) |queued_task, i| {
+        if (queued_task == pid) {
+            for (0..i) |_| {
+                queue.writeItem(queue.readItem().?) catch unreachable;
+            }
+
+            _ = queue.readItem().?;
+        }
+    }
+}
+
+fn killTask(pid: Pid) void {
+    for (tasks.items[pid].?.children.items) |child| {
+        killTask(child);
+    }
+
+    deleteTask(pid);
+}
+
 pub fn exit(context: *hal.ContextFrame) void {
     const pid = getCurrentPid().?;
 
-    tasks.items[pid] = null;
-    current = null;
+    killTask(pid);
 
     reschedule(context) catch |err| switch (err) {
         error.OutOfMemory => @panic("OOM"),
@@ -182,6 +207,7 @@ pub fn fork(context: *hal.ContextFrame) Pid {
         .arena = std.heap.ArenaAllocator.init(allocator),
         .page_table = undefined,
         .context = context.*,
+        .parent = undefined,
     };
 
     child.context.rax = 0;
@@ -231,6 +257,11 @@ pub fn fork(context: *hal.ContextFrame) Pid {
     const pid = addTask(child) catch |err| switch (err) {
         error.OutOfMemory => @panic("OOM"),
     };
+
+    tasks.items[getCurrentPid().?].?.children.append(tasks.items[getCurrentPid().?].?.arena.allocator(), pid) catch |err| switch (err) {
+        error.OutOfMemory => @panic("OOM"),
+    };
+    child.parent = getCurrentPid().?;
 
     queue.writeItem(pid) catch |err| switch (err) {
         error.OutOfMemory => @panic("OOM"),
