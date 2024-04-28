@@ -94,6 +94,10 @@ pub fn cpuid() usize {
     return if (getCoreInfoInner()) |info| info.id else 0;
 }
 
+pub fn count() usize {
+    return core_count;
+}
+
 fn getCoreInfoInner() ?*hal.CoreInfo {
     return if (core_count > 0) switch (builtin.cpu.arch) {
         .x86_64 => @as(?*hal.CoreInfo, @ptrFromInt(@import("arch/x86_64/cpu.zig").Msr.read(.KERNEL_GS_BASE))),

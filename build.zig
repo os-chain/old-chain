@@ -127,6 +127,10 @@ pub fn build(b: *std.Build) !void {
     const initrd_step = b.step("initrd", "Build the initrd");
     initrd_step.dependOn(&b.addInstallFile(initrd, "initrd").step);
 
+    const chain_mod = b.addModule("chain", .{
+        .root_source_file = .{ .path = "user/chain.zig" },
+    });
+
     const apps_dir = try b.build_root.handle.openDir("user/apps", .{ .iterate = true });
     var apps_iter = apps_dir.iterate();
     while (try apps_iter.next()) |app_entry| {
@@ -143,6 +147,8 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = .{ .path = b.fmt("user/apps/{s}/main.zig", .{name}) },
         });
         exe.setLinkerScript(.{ .path = b.fmt("user/linker-{s}.ld", .{@tagName(build_options.arch)}) });
+
+        exe.root_module.addImport("chain", chain_mod);
 
         const objcopy = b.addObjCopy(exe.getEmittedBin(), .{
             .format = .bin,
@@ -215,7 +221,6 @@ pub fn build(b: *std.Build) !void {
             qemu_cmd.addArgs(&.{ "-boot", "d" });
             qemu_cmd.addArgs(&.{ "-debugcon", "stdio" });
             qemu_cmd.addArgs(&.{ "-smp", b.fmt("{d}", .{build_options.emul_smp}) });
-            if (optimize == .Debug) qemu_cmd.addArgs(&.{ "-d", "int", "-M", "smm=off" });
             if (build_options.gdb) qemu_cmd.addArgs(&.{ "-s", "-S" });
         },
         else => return error.UnsupportedArch,
@@ -223,4 +228,5 @@ pub fn build(b: *std.Build) !void {
 
     const qemu_step = b.step("qemu", "Run in QEMU");
     qemu_step.dependOn(&qemu_cmd.step);
+    if (build_options.gdb) qemu_step.dependOn(kernel_step);
 }

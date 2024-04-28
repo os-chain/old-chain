@@ -155,6 +155,7 @@ pub const Cr3 = struct {
 
 pub const Msr = struct {
     pub const Register = enum(u32) {
+        APIC_BASE = 0x0000_001B,
         EFER = 0xC000_0080,
         STAR = 0xC000_0081,
         LSTAR = 0xC000_0082,

@@ -7,6 +7,7 @@ const gdt = @import("gdt.zig");
 const int = @import("int.zig");
 const paging = @import("paging.zig");
 const tss = @import("tss.zig");
+const lapic = @import("lapic.zig");
 const syscall = @import("syscall.zig");
 const smp = @import("../../smp.zig");
 
@@ -28,6 +29,7 @@ pub fn initCpuBarebones() void {
 
 pub fn initCpu(allocator: std.mem.Allocator) !void {
     try tss.init(allocator);
+    try lapic.init(allocator);
     syscall.init();
 }
 

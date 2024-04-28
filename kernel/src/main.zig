@@ -28,8 +28,10 @@ comptime {
     }
 }
 
-var gpa = std.heap.GeneralPurposeAllocator(.{ .thread_safe = true, .MutexType = smp.SpinLock }){};
-const allocator = gpa.allocator();
+// TODO: Fix GPA
+//var gpa = std.heap.GeneralPurposeAllocator(.{ .thread_safe = true, .MutexType = smp.SpinLock }){};
+//const allocator = gpa.allocator();
+const allocator = std.heap.page_allocator;
 
 var init_done: bool = false;
 
@@ -46,8 +48,8 @@ pub fn logFn(comptime message_level: std.log.Level, comptime scope: @Type(.EnumL
         .debug => "\x1b[90m",
     } ++ "[" ++ @tagName(message_level) ++ "]\x1b[0m (" ++ @tagName(scope) ++ ")";
 
-    const writer = std.io.GenericWriter(*const anyopaque, error{}, struct {
-        fn f(_: *const anyopaque, bytes: []const u8) error{}!usize {
+    const DebugconWriter = struct {
+        pub fn writeFn(_: *const anyopaque, bytes: []const u8) error{}!usize {
             for (bytes) |char| {
                 hal.debugcon(char);
                 if (char == '\n') {
@@ -59,7 +61,11 @@ pub fn logFn(comptime message_level: std.log.Level, comptime scope: @Type(.EnumL
 
             return bytes.len;
         }
-    }.f){ .context = undefined };
+    };
+
+    const debugcon_writer = DebugconWriter{};
+
+    const writer = std.io.AnyWriter{ .context = &debugcon_writer, .writeFn = DebugconWriter.writeFn };
 
     std.fmt.format(writer, prefix ++ " " ++ format, .{smp.cpuid()} ++ args) catch unreachable;
 
@@ -150,9 +156,10 @@ fn deinit() void {
     log.debug("Checking for memory leaks", .{});
 
     if (smp.cpuid() == 0) {
-        switch (gpa.deinit()) {
-            .ok => log.debug("No memory leaked", .{}),
-            .leak => log.err("Memory leaked", .{}),
-        }
+        // TODO: Fix GPA
+        //switch (gpa.deinit()) {
+        //    .ok => log.debug("No memory leaked", .{}),
+        //    .leak => log.err("Memory leaked", .{}),
+        //}
     }
 }

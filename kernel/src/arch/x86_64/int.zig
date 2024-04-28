@@ -1,6 +1,7 @@
 const std = @import("std");
 const cpu = @import("cpu.zig");
 const gdt = @import("gdt.zig");
+const lapic = @import("lapic.zig");
 
 const log = std.log.scoped(.int);
 
@@ -138,6 +139,8 @@ export var idt: Idt = [1]IdtEntry{.{
     .ring = 0,
     .present = false,
 }} ** 256;
+
+var irqs: [16]?*const fn (frame: *cpu.ContextFrame) void = .{null} ** 16;
 
 pub fn init() void {
     log.debug("Initializing", .{});
@@ -278,8 +281,23 @@ export fn interruptHandler(frame: *cpu.ContextFrame) void {
 
             cpu.halt();
         },
+        32...48 => |int_i| {
+            const irq_i = int_i - 32;
+            if (irqs[irq_i]) |irq| {
+                irq(frame);
+                lapic.getLapic().writeRegister(.eoi, 0);
+            } else log.warn("IRQ{d} called without a handler registered", .{irq_i});
+        },
         else => |i| {
             log.debug("Unhandled interrupt {d}", .{i});
         },
     }
+}
+
+pub fn intFromIrq(irq: u4) u8 {
+    return @as(u8, irq) + 32;
+}
+
+pub fn registerIrq(irq: u4, handler: *const fn (frame: *cpu.ContextFrame) void) void {
+    irqs[irq] = handler;
 }

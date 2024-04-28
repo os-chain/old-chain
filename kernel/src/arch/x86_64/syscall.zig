@@ -11,21 +11,35 @@ var core_info: cpu.CoreInfo = undefined;
 
 const syscalls = &.{
     write,
+    exit,
+    fork,
 };
 
-pub fn write(_fd: u64, _buf_ptr: u64, _buf_len: u64) u64 {
+pub fn write(_: *cpu.ContextFrame, _fd: u64, _buf_ptr: u64, _buf_len: u64) u64 {
     const fd: task.Fd = _fd;
     if (_buf_ptr == 0) return 0; // TODO: Signal this
     const buf_ptr: [*]const u8 = @ptrFromInt(_buf_ptr);
     const buf_len: usize = _buf_len;
     const buf = buf_ptr[0..buf_len];
 
-    const t = task.getCurrentTask();
+    const t = task.getCurrentTask().?;
 
     if (fd >= t.files.items.len or t.files.items[fd] == null) return 0; // TODO: Signal this
     const stdout = t.files.items[fd].?;
 
     return stdout.write(0, buf);
+}
+
+pub fn exit(frame: *cpu.ContextFrame, _code: u64) void {
+    const code: u8 = @truncate(_code);
+    _ = code;
+    // TODO: Return code
+
+    task.exit(frame);
+}
+
+pub fn fork(frame: *cpu.ContextFrame) u64 {
+    return task.fork(frame);
 }
 
 pub fn init() void {
@@ -47,9 +61,18 @@ pub fn init() void {
 
 fn syscallEntry() callconv(.Naked) void {
     asm volatile (
+        \\cli
         \\swapgs
         \\movq %%rsp, %%gs:8
         \\movq %%gs:0, %%rsp
+        \\
+        \\pushq %[udata]
+        \\pushq %%gs:8
+        \\pushq %r11
+        \\pushq %[ucode]
+        \\pushq %%rcx
+        \\pushq $0
+        \\pushq $0
         \\
         \\push %%rax
         \\push %%rbx
@@ -78,6 +101,7 @@ fn syscallEntry() callconv(.Naked) void {
         \\mov %%ax, %%es
         \\mov %%ax, %%ds
         \\swapgs
+        \\xor %%rbp, %%rbp
         \\call syscallHandler
         \\swapgs
         \\
@@ -101,12 +125,16 @@ fn syscallEntry() callconv(.Naked) void {
         \\pop %%rcx
         \\pop %%rbx
         \\pop %%rax
+        \\add $16, %%rsp
         \\
         \\movq %%gs:8, %%rsp
         \\swapgs
+        \\sti
         \\sysretq
         :
         : [kdata] "i" (gdt.selectors.kdata_64),
+          [udata] "i" (gdt.selectors.udata_64),
+          [ucode] "i" (gdt.selectors.ucode_64),
     );
 }
 
@@ -120,18 +148,24 @@ export fn syscallHandler(frame: *cpu.ContextFrame) void {
         inline 0...syscalls.len - 1 => |n| {
             const func = syscalls[n];
 
-            const argc = @typeInfo(@TypeOf(func)).Fn.params.len;
+            const argc = @typeInfo(@TypeOf(func)).Fn.params.len - 1;
 
-            frame.rax = switch (argc) {
-                0 => func(),
-                1 => func(frame.rdi),
-                2 => func(frame.rdi, frame.rsi),
-                3 => func(frame.rdi, frame.rsi, frame.rdx),
-                4 => func(frame.rdi, frame.rsi, frame.rdx, frame.r10),
-                5 => func(frame.rdi, frame.rsi, frame.rdx, frame.r10, frame.r8),
-                6 => func(frame.rdi, frame.rsi, frame.rdx, frame.r10, frame.r8, frame.r9),
+            const ret = switch (argc) {
+                0 => func(frame),
+                1 => func(frame, frame.rdi),
+                2 => func(frame, frame.rdi, frame.rsi),
+                3 => func(frame, frame.rdi, frame.rsi, frame.rdx),
+                4 => func(frame, frame.rdi, frame.rsi, frame.rdx, frame.r10),
+                5 => func(frame, frame.rdi, frame.rsi, frame.rdx, frame.r10, frame.r8),
+                6 => func(frame, frame.rdi, frame.rsi, frame.rdx, frame.r10, frame.r8, frame.r9),
                 else => unreachable,
             };
+
+            switch (@TypeOf(ret)) {
+                u64 => frame.rax = ret,
+                void => frame.rax = 0,
+                else => |other| @compileError(std.fmt.comptimePrint("Syscall {d} has a return type of {}", .{ n, other })),
+            }
         },
         else => log.debug("Unknown syscall {d}", .{frame.rax}),
     }

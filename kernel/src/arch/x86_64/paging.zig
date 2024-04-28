@@ -263,9 +263,29 @@ pub fn modifyRecursive(table: *PageTable, level: usize, modifications: PageTable
 
 pub const UnmapPageError = error{NotMapped};
 
-pub fn unmapPage(vaddr: usize) UnmapPageError!void {
-    _ = vaddr;
-    @panic("Not implemented");
+pub fn unmapPage(lvl4: *PageTable, vaddr: usize) void {
+    log.debug("Unmapping V:{x}", .{vaddr});
+
+    std.debug.assert(vaddr % 0x1000 == 0);
+
+    const indices = indicesFromAddr(vaddr);
+
+    std.debug.assert(indices.offset == 0);
+
+    log.debug("V:{x} indices: L4:{d} L3:{d} L2:{d} L1:{d}", .{ vaddr, indices.lvl4, indices.lvl3, indices.lvl2, indices.lvl1 });
+
+    var current = lvl4;
+    inline for ([_]usize{ indices.lvl4, indices.lvl3, indices.lvl2 }) |index| {
+        const entry = current[index];
+
+        if (entry.present) {
+            if (entry.huge) @panic("Huge pages not implemented");
+
+            current = entry.getTable();
+        } else return;
+    }
+
+    current[indices.lvl1].present = false;
 }
 
 /// Map the kernel to a lvl4 page table
@@ -293,6 +313,29 @@ pub fn isValid(table: *PageTable, level: usize) bool {
     }
 
     return true;
+}
+
+pub fn dupePageTableLevel(allocator: std.mem.Allocator, table: *PageTable, level: usize) !*PageTable {
+    const new = &((try allocator.allocWithOptions(PageTable, 1, 0x1000, null))[0]);
+    new.* = std.mem.zeroes(PageTable);
+
+    mapKernel(new);
+
+    for (table, 0..) |entry, i| {
+        if (level == 4 and i >= 256) break;
+
+        new[i] = entry;
+        if (level > 1 and entry.present) {
+            const child = try dupePageTableLevel(allocator, entry.getTable(), level - 1);
+            new[i].aligned_paddr = @truncate(physFromVirt(getActiveLvl4Table(), @intFromPtr(child)).? >> 12);
+        }
+    }
+
+    return new;
+}
+
+pub fn dupePageTable(allocator: std.mem.Allocator, table: *PageTable) !*PageTable {
+    return dupePageTableLevel(allocator, table, 4);
 }
 
 pub fn init() void {
