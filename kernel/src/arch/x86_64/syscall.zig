@@ -4,43 +4,11 @@ const gdt = @import("gdt.zig");
 const tss = @import("tss.zig");
 const smp = @import("../../smp.zig");
 const task = @import("../../task.zig");
+const root_syscall = @import("../../syscall.zig");
 
 const log = std.log.scoped(.syscall);
 
 var core_info: cpu.CoreInfo = undefined;
-
-const syscalls = &.{
-    write,
-    exit,
-    fork,
-};
-
-pub fn write(_: *cpu.ContextFrame, _fd: u64, _buf_ptr: u64, _buf_len: u64) u64 {
-    const fd: task.Fd = _fd;
-    if (_buf_ptr == 0) return 0; // TODO: Signal this
-    const buf_ptr: [*]const u8 = @ptrFromInt(_buf_ptr);
-    const buf_len: usize = _buf_len;
-    const buf = buf_ptr[0..buf_len];
-
-    const t = task.getCurrentTask().?;
-
-    if (fd >= t.files.items.len or t.files.items[fd] == null) return 0; // TODO: Signal this
-    const stdout = t.files.items[fd].?;
-
-    return stdout.write(0, buf);
-}
-
-pub fn exit(frame: *cpu.ContextFrame, _code: u64) void {
-    const code: u8 = @truncate(_code);
-    _ = code;
-    // TODO: Return code
-
-    task.exit(frame);
-}
-
-pub fn fork(frame: *cpu.ContextFrame) u64 {
-    return task.fork(frame);
-}
 
 pub fn init() void {
     log.debug("Initializing...", .{});
@@ -145,9 +113,9 @@ export fn syscallHandler(frame: *cpu.ContextFrame) void {
     );
 
     switch (frame.rax) {
-        inline 0...syscalls.len - 1 => |n| {
-            const func = syscalls[n];
-
+        inline 0...root_syscall.syscalls.len - 1 => |n| {
+            const name = root_syscall.syscalls[n];
+            const func = root_syscall.getFunction(name);
             const argc = @typeInfo(@TypeOf(func)).Fn.params.len - 1;
 
             const ret = switch (argc) {
