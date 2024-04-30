@@ -22,7 +22,6 @@ pub const Pid = u64;
 pub const Fd = u64;
 
 pub const Task = struct {
-    regs: hal.ContextFrame = undefined,
     page_table: *hal.PageTable,
     arena: std.heap.ArenaAllocator,
     files: std.ArrayListUnmanaged(?*vfs.Node) = .{},
@@ -268,6 +267,67 @@ pub fn fork(context: *hal.ContextFrame) Pid {
     };
 
     return pid;
+}
+
+pub fn execve(context: *hal.ContextFrame, argv: []const []const u8) void {
+    const task = &(tasks.items[getCurrentPid().?].?);
+
+    const file = vfs.openPath(argv[0]) catch return;
+    defer file.close();
+
+    const code_page_count = std.math.divCeil(usize, file.length, 0x1000) catch unreachable;
+
+    const arena = task.arena.allocator();
+
+    const code_frames = arena.allocWithOptions(u8, code_page_count * 0x1000, 0x1000, null) catch return;
+    const stack_frames = arena.allocWithOptions(u8, stack_page_count * 0x1000, 0x1000, null) catch return;
+
+    task.page_table = &((arena.allocWithOptions(hal.PageTable, 1, 0x1000, null) catch return)[0]);
+    task.page_table.* = std.mem.zeroes(hal.PageTable);
+    hal.mapKernel(task.page_table);
+
+    std.debug.assert(file.read(0, code_frames) == file.length);
+
+    for (0..code_page_count) |i| {
+        hal.mapPage(
+            arena,
+            task.page_table,
+            0x200000 + 0x1000 * i,
+            hal.physFromVirt(task.page_table, @intFromPtr(code_frames.ptr)).? + 0x1000 * i,
+            .{
+                .writable = false,
+                .executable = true,
+                .user = true,
+                .global = false,
+            },
+        ) catch return;
+    }
+    for (0..stack_page_count) |i| {
+        hal.mapPage(
+            arena,
+            task.page_table,
+            0x10200000 + 0x1000 * i,
+            hal.physFromVirt(task.page_table, @intFromPtr(stack_frames.ptr)).? + 0x1000 * i,
+            .{
+                .writable = true,
+                .executable = false,
+                .user = true,
+                .global = false,
+            },
+        ) catch return;
+    }
+
+    const page_table_addr = hal.physFromVirt(hal.getActivePageTable(), @intFromPtr(task.page_table)).?;
+    std.debug.assert(page_table_addr % 0x1000 == 0);
+    std.debug.assert(hal.pageIsValid(task.page_table));
+
+    hal.setPageTableAddr(page_table_addr);
+
+    const stack_top = 0x10200000 + 0x1000 * stack_page_count;
+
+    context.rcx = 0x200000;
+    context.rsp = stack_top;
+    context.rbp = stack_top;
 }
 
 fn runRootTask(task: Task) noreturn {

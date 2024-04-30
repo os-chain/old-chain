@@ -10,6 +10,7 @@ pub const syscalls: []const []const u8 = &.{
     "write",
     "exit",
     "fork",
+    "execve",
 };
 
 const funcs = struct {
@@ -38,5 +39,10 @@ const funcs = struct {
 
     fn fork(frame: *hal.ContextFrame) u64 {
         return task.fork(frame);
+    }
+
+    fn execve(frame: *hal.ContextFrame, _argc: usize, _argv: usize) void {
+        const argv = @as([*]const []const u8, @ptrFromInt(_argv))[0.._argc];
+        task.execve(frame, argv);
     }
 };

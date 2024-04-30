@@ -31,6 +31,10 @@ pub fn fork() usize {
     return syscall0(getSyscallNum("fork"));
 }
 
+pub fn execve(argv: []const []const u8) void {
+    _ = syscall2(getSyscallNum("execve"), argv.len, @intFromPtr(argv.ptr));
+}
+
 fn syscall0(comptime n: usize) usize {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> usize),
