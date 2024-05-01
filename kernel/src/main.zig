@@ -105,17 +105,20 @@ fn startCpu() callconv(.C) noreturn {
 }
 
 fn init() !void {
+    hal.disableInterrupts();
+
     if (smp.cpuid() == 0) {
         arch.initCpuBarebones();
         pmm.init();
+        try acpi.init();
         try arch.initCpu(allocator);
 
-        try acpi.init();
         try vfs.init(allocator);
         try devfs.init(allocator);
         try initrd.init(allocator);
         try crofs.init();
         try vfs.mountDevice("/dev/initrd", "/");
+        try arch.initDevices(allocator);
         try framebuffer.init(allocator);
         try tty.init();
         try task.init(allocator);
@@ -134,6 +137,8 @@ fn init() !void {
         arch.initCpuBarebones();
         try arch.initCpu(allocator);
     }
+
+    hal.enableInterrupts();
 
     task.start();
 }

@@ -7,6 +7,9 @@ pub fn _start() callconv(.C) void {
     exit(0);
 }
 
+pub const stdout = 0;
+pub const stdin = 1;
+
 fn getSyscallNum(comptime name: []const u8) usize {
     for (options.syscalls, 0..) |syscall, i| {
         if (std.mem.eql(u8, syscall, name)) return i;
@@ -15,11 +18,15 @@ fn getSyscallNum(comptime name: []const u8) usize {
 }
 
 pub fn print(buf: []const u8) void {
-    std.debug.assert(write(0, buf) == buf.len);
+    std.debug.assert(write(stdout, buf) == buf.len);
 }
 
 pub fn write(fd: usize, buf: []const u8) usize {
     return syscall3(getSyscallNum("write"), fd, @intFromPtr(buf.ptr), buf.len);
+}
+
+pub fn read(fd: usize, buf: []u8) usize {
+    return syscall3(getSyscallNum("read"), fd, @intFromPtr(buf.ptr), buf.len);
 }
 
 pub fn exit(ret: u8) noreturn {

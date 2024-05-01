@@ -6,7 +6,11 @@ comptime {
 }
 
 pub fn main() void {
-    chain.print("SH");
+    var buf: [1]u8 = undefined;
 
-    while (true) {}
+    while (true) {
+        if (chain.read(chain.stdin, &buf) != 0) {
+            chain.print(&buf);
+        }
+    }
 }

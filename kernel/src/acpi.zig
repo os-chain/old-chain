@@ -6,9 +6,10 @@ pub export var rsdp_req = limine.RsdpRequest{};
 
 const log = std.log.scoped(.acpi);
 
-var root_sdt: *Rsdt = undefined;
-var fadt: ?*Fadt = null;
-var dsdt: ?*Dsdt = null;
+pub var root_sdt: *Rsdt = undefined;
+pub var fadt: ?*Fadt = null;
+pub var dsdt: ?*Dsdt = null;
+pub var madt: ?*Madt = null;
 
 pub const Rsdp = extern struct {
     signature: [8]u8 align(1),
@@ -85,6 +86,27 @@ pub const Dsdt = extern struct {
     header: SdtHeader align(1),
 };
 
+pub const Madt = extern struct {
+    header: SdtHeader align(1),
+    lapic_addr: u32 align(1),
+    flags: u32 align(1),
+
+    /// Returns the (virtual) address of the I/O APIC
+    pub fn getIoApicAddr(self: *Madt) usize {
+        var ptr = @as([*]u8, @ptrCast(self));
+
+        ptr += @sizeOf(Madt);
+
+        while (true) {
+            if (ptr[0] == 1) {
+                return hal.virtFromPhys(std.mem.readInt(u32, ptr[4..8], .little));
+            } else {
+                ptr += ptr[1];
+            }
+        }
+    }
+};
+
 pub fn init() !void {
     log.debug("Initializing...", .{});
     defer log.debug("Initialization done", .{});
@@ -130,6 +152,9 @@ pub fn init() !void {
 
                         log.debug("DSDT signature=\"{s}\"", .{dsdt.?.header.signature});
                         if (!std.mem.eql(u8, "DSDT", &dsdt.?.header.signature)) return error.BadDsdtSignature;
+                    } else if (std.mem.eql(u8, "APIC", &@as(*SdtHeader, @ptrCast(entry)).signature)) {
+                        madt = @ptrCast(entry);
+                        log.debug("MADT found at {x}", .{@intFromPtr(madt.?)});
                     }
                 }
             },

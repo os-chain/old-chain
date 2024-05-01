@@ -273,6 +273,9 @@ export fn interruptHandler(frame: *cpu.ContextFrame) void {
                 .BP => {
                     cpu.halt();
                 },
+                .GP => {
+                    log.debug("rip=0x{x}", .{frame.rip});
+                },
                 .PF => {
                     log.debug("cr2=0x{x}", .{cpu.Cr2.read()});
                 },

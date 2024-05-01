@@ -36,6 +36,12 @@ pub const Lapic = struct {
 
 var lapics: []Lapic = &(.{} ** options.max_cpus);
 
+var bootstrap_lapic_id: u32 = 0;
+
+pub fn getBootstrapLapicId() u32 {
+    return bootstrap_lapic_id;
+}
+
 pub fn init(_allocator: std.mem.Allocator) !void {
     log.debug("Initializing...", .{});
     defer log.debug("Initialization done", .{});
@@ -46,6 +52,8 @@ pub fn init(_allocator: std.mem.Allocator) !void {
     }
 
     if (smp.smp_req.response) |smp_res| {
+        bootstrap_lapic_id = smp_res.bsp_lapic_id;
+
         const lapic_id = smp_res.cpus()[smp.cpuid()].lapic_id;
         if (lapic_id != smp.cpuid()) @panic("LAPIC ID doesn't match CPU ID");
         lapics[smp.cpuid()] = .{

@@ -13,6 +13,7 @@ const log = std.log.scoped(.tty);
 var node: vfs.Node = undefined;
 
 var fb: *vfs.Node = undefined;
+var kb: *vfs.Node = undefined;
 
 var cursor: struct { x: usize, y: usize } = .{ .x = 0, .y = 0 };
 
@@ -220,6 +221,7 @@ pub fn init() !void {
     defer log.debug("Initialization done", .{});
 
     fb = try vfs.openPath("/dev/fb0");
+    kb = try vfs.openPath("/dev/kb");
 
     if (fb.length != 1280 * 800 * 4) log.err("Framebuffer is not 1280x800 bpp=32", .{});
 
@@ -229,6 +231,7 @@ pub fn init() !void {
         .inode = 0,
         .length = 0,
         .writeFn = write,
+        .readFn = read,
     });
 
     try devfs.addDevice(&node);
@@ -246,4 +249,10 @@ fn write(_node: *vfs.Node, _: u64, buf: []const u8) usize {
     }
 
     return buf.len;
+}
+
+fn read(_node: *vfs.Node, _: u64, buf: []u8) usize {
+    std.debug.assert(&node == _node);
+
+    return kb.read(0, buf);
 }
