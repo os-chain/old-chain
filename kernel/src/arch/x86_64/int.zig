@@ -2,6 +2,7 @@ const std = @import("std");
 const cpu = @import("cpu.zig");
 const gdt = @import("gdt.zig");
 const lapic = @import("lapic.zig");
+const task = @import("../../task.zig");
 
 const log = std.log.scoped(.int);
 
@@ -265,22 +266,16 @@ export fn interruptHandler(frame: *cpu.ContextFrame) void {
         inline 0, 1, 3...8, 10...14, 16...21 => |exception_i| {
             const exception: Exception = @enumFromInt(exception_i);
 
-            log.err("Exception: {s} ({s})" ++
-                if (exception.hasErrorCode()) " err=0x{x}" else "", .{ exception.getMnemonic(), exception.getDescription() } ++
-                if (exception.hasErrorCode()) .{frame.err} else .{});
+            cpu.cli();
 
-            switch (exception) {
-                .BP => {
-                    cpu.halt();
-                },
-                .GP => {
-                    log.debug("rip=0x{x}", .{frame.rip});
-                },
-                .PF => {
-                    log.debug("cr2=0x{x}", .{cpu.Cr2.read()});
-                },
-                else => {},
-            }
+            log.err(
+                \\Exception: {s} ({s})
+                \\v={x:0>2} err={x}
+                \\rax={x:0>16} rbx={x:0>16} rcx={x:0>16} rdx={x:0>16}
+                \\rip={x:0>16} rsp={x:0>16} rbp={x:0>16}
+                \\cr2={x:0>16} cr3={x:0>16}
+                \\pid={?x}
+            , .{ exception.getMnemonic(), exception.getDescription(), frame.int_num, frame.err, frame.rax, frame.rbx, frame.rcx, frame.rdx, frame.rip, frame.rsp, frame.rbp, cpu.Cr2.read(), cpu.Cr3.read(), task.getCurrentPid() });
 
             cpu.halt();
         },

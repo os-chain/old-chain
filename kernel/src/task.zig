@@ -10,7 +10,7 @@ var allocator: std.mem.Allocator = undefined;
 
 var tasks: std.ArrayList(?Task) = undefined;
 
-const stack_page_count = 8;
+const stack_page_count = 0x10;
 
 const reschedule_ticks = 0x10000;
 
@@ -77,41 +77,11 @@ pub fn addRoot(path: []const u8) !void {
     const node = try vfs.openPath(path);
     defer node.close();
 
-    const code_page_count = std.math.divCeil(usize, node.length, 0x1000) catch unreachable;
+    // TODO: Use a stream
+    const file_data = try arena.alloc(u8, node.length);
+    std.debug.assert(node.read(0, file_data) == file_data.len);
 
-    const code_frames = try arena.allocWithOptions(u8, code_page_count * 0x1000, 0x1000, null);
-    const stack_frames = try arena.allocWithOptions(u8, stack_page_count * 0x1000, 0x1000, null);
-
-    std.debug.assert(node.read(0, code_frames) == node.length);
-
-    for (0..code_page_count) |i| {
-        try hal.mapPage(
-            arena,
-            task.page_table,
-            0x200000 + 0x1000 * i,
-            hal.physFromVirt(task.page_table, @intFromPtr(code_frames.ptr)).? + 0x1000 * i,
-            .{
-                .writable = false,
-                .executable = true,
-                .user = true,
-                .global = false,
-            },
-        );
-    }
-    for (0..stack_page_count) |i| {
-        try hal.mapPage(
-            arena,
-            task.page_table,
-            0x10200000 + 0x1000 * i,
-            hal.physFromVirt(task.page_table, @intFromPtr(stack_frames.ptr)).? + 0x1000 * i,
-            .{
-                .writable = true,
-                .executable = false,
-                .user = true,
-                .global = false,
-            },
-        );
-    }
+    try loadTask(&task, file_data);
 
     std.debug.assert(task.files.items.len == 0);
     try task.files.append(arena, vfs.openPath("/dev/tty") catch null);
@@ -126,6 +96,7 @@ pub fn addRoot(path: []const u8) !void {
 }
 
 pub fn start() noreturn {
+    log.debug("Starting scheduler...", .{});
     hal.registerIrq(0, struct {
         fn f(frame: *hal.ContextFrame) void {
             reschedule(frame) catch |err| switch (err) {
@@ -225,7 +196,7 @@ pub fn fork(context: *hal.ContextFrame) Pid {
         hal.mapPage(
             child_arena,
             child.page_table,
-            0x10200000 + 0x1000 * i,
+            0x100200000 + 0x1000 * i,
             hal.physFromVirt(child.page_table, @intFromPtr(stack_frames.ptr)).? + 0x1000 * i,
             .{
                 .writable = true,
@@ -237,8 +208,8 @@ pub fn fork(context: *hal.ContextFrame) Pid {
             error.OutOfMemory => @panic("OOM"),
         };
 
-        const child_stack_page: *[0x1000]u8 = @ptrFromInt(hal.virtFromPhys(hal.physFromVirt(child.page_table, 0x10200000 + 0x1000 * i).?));
-        const parent_stack_page: *[0x1000]u8 = @ptrFromInt(hal.virtFromPhys(hal.physFromVirt(getCurrentTask().?.page_table, 0x10200000 + 0x1000 * i).?));
+        const child_stack_page: *[0x1000]u8 = @ptrFromInt(hal.virtFromPhys(hal.physFromVirt(child.page_table, 0x100200000 + 0x1000 * i).?));
+        const parent_stack_page: *[0x1000]u8 = @ptrFromInt(hal.virtFromPhys(hal.physFromVirt(getCurrentTask().?.page_table, 0x100200000 + 0x1000 * i).?));
         log.debug("Copying stack page from 0x{x} to 0x{x} because of a fork", .{ @intFromPtr(parent_stack_page.ptr), @intFromPtr(child_stack_page) });
         @memcpy(child_stack_page, parent_stack_page);
     }
@@ -272,70 +243,29 @@ pub fn fork(context: *hal.ContextFrame) Pid {
 pub fn execve(context: *hal.ContextFrame, argv: []const []const u8) void {
     const task = &(tasks.items[getCurrentPid().?].?);
 
-    const file = vfs.openPath(argv[0]) catch return;
-    defer file.close();
-
-    const code_page_count = std.math.divCeil(usize, file.length, 0x1000) catch unreachable;
-
     const arena = task.arena.allocator();
 
-    const code_frames = arena.allocWithOptions(u8, code_page_count * 0x1000, 0x1000, null) catch return;
-    const stack_frames = arena.allocWithOptions(u8, stack_page_count * 0x1000, 0x1000, null) catch return;
+    const node = vfs.openPath(argv[0]) catch return;
+    defer node.close();
 
-    task.page_table = &((arena.allocWithOptions(hal.PageTable, 1, 0x1000, null) catch return)[0]);
-    task.page_table.* = std.mem.zeroes(hal.PageTable);
-    hal.mapKernel(task.page_table);
+    // TODO: Use a stream
+    const file_data = arena.alloc(u8, node.length) catch |err| switch (err) {
+        error.OutOfMemory => @panic("OOM"),
+    };
+    std.debug.assert(node.read(0, file_data) == file_data.len);
 
-    std.debug.assert(file.read(0, code_frames) == file.length);
+    loadTask(task, file_data) catch |err| switch (err) {
+        error.OutOfMemory => @panic("OOM"),
+        error.BadElf => return,
+    };
 
-    for (0..code_page_count) |i| {
-        hal.mapPage(
-            arena,
-            task.page_table,
-            0x200000 + 0x1000 * i,
-            hal.physFromVirt(task.page_table, @intFromPtr(code_frames.ptr)).? + 0x1000 * i,
-            .{
-                .writable = false,
-                .executable = true,
-                .user = true,
-                .global = false,
-            },
-        ) catch return;
-    }
-    for (0..stack_page_count) |i| {
-        hal.mapPage(
-            arena,
-            task.page_table,
-            0x10200000 + 0x1000 * i,
-            hal.physFromVirt(task.page_table, @intFromPtr(stack_frames.ptr)).? + 0x1000 * i,
-            .{
-                .writable = true,
-                .executable = false,
-                .user = true,
-                .global = false,
-            },
-        ) catch return;
-    }
-
-    const page_table_addr = hal.physFromVirt(hal.getActivePageTable(), @intFromPtr(task.page_table)).?;
-    std.debug.assert(page_table_addr % 0x1000 == 0);
-    std.debug.assert(hal.pageIsValid(task.page_table));
-
-    hal.setPageTableAddr(page_table_addr);
-
-    const stack_top = 0x10200000 + 0x1000 * stack_page_count;
-
-    context.rcx = 0x200000;
-    context.rsp = stack_top;
-    context.rbp = stack_top;
+    context.* = task.context;
 }
 
 fn runRootTask(task: Task) noreturn {
     const page_table_addr = hal.physFromVirt(hal.getActivePageTable(), @intFromPtr(task.page_table)).?;
     std.debug.assert(page_table_addr % 0x1000 == 0);
     std.debug.assert(hal.pageIsValid(task.page_table));
-
-    const stack_top = 0x10200000 + 0x1000 * stack_page_count;
 
     hal.setPageTableAddr(page_table_addr);
 
@@ -344,14 +274,85 @@ fn runRootTask(task: Task) noreturn {
             .x86_64 => asm volatile (
                 \\sysretq
                 :
-                : [addr] "{rcx}" (0x200000),
+                : [addr] "{rcx}" (task.context.rcx),
                   [flags] "{r11}" (0x202),
-                  [stack_rsp] "{rsp}" (stack_top),
-                  [stack_rbp] "{rbp}" (stack_top),
+                  [stack_rsp] "{rsp}" (task.context.rsp),
                 : "memory"
             ),
             else => |other| @compileError(@tagName(other) ++ " not supported"),
         }
         unreachable;
     }
+}
+
+fn loadTask(task: *Task, exe: []const u8) !void {
+    const arena = task.arena.allocator();
+
+    var fbs = std.io.fixedBufferStream(exe);
+    const reader = fbs.reader();
+
+    const ehdr = reader.readStruct(std.elf.Elf64_Ehdr) catch return error.BadElf;
+
+    if (!std.mem.eql(u8, ehdr.e_ident[0..4], std.elf.MAGIC)) return error.BadElf;
+    if (ehdr.e_ident[std.elf.EI_CLASS] != std.elf.ELFCLASS64) return error.BadElf;
+    if (ehdr.e_ident[std.elf.EI_DATA] != std.elf.ELFDATA2LSB) return error.BadElf;
+    if (ehdr.e_ident[std.elf.EI_VERSION] != 1) return error.BadElf;
+    if (ehdr.e_type != .EXEC) return error.BadElf;
+    if (ehdr.e_machine != builtin.cpu.arch.toElfMachine()) return error.BadElf;
+    if (ehdr.e_version != 1) return error.BadElf;
+
+    log.debug("entry=0x{x}", .{ehdr.e_entry});
+
+    fbs.pos = ehdr.e_phoff;
+    for (0..ehdr.e_phnum) |_| {
+        const phdr = reader.readStruct(std.elf.Elf64_Phdr) catch return error.BadElf;
+        switch (phdr.p_type) {
+            std.elf.PT_NULL => {},
+            std.elf.PT_LOAD => {
+                if (phdr.p_filesz != phdr.p_memsz) return error.BadElf;
+                const page_count = std.math.divCeil(usize, phdr.p_filesz, 0x1000) catch unreachable;
+                const frames = try arena.allocWithOptions(u8, page_count * 0x1000, 0x1000, null);
+                const data = exe[phdr.p_offset .. phdr.p_offset + phdr.p_filesz];
+                @memcpy(frames[0..phdr.p_filesz], data);
+
+                for (0..page_count) |page_i| {
+                    try hal.mapPage(
+                        arena,
+                        task.page_table,
+                        phdr.p_vaddr + 0x1000 * page_i,
+                        hal.physFromVirt(task.page_table, @intFromPtr(frames.ptr)).? + 0x1000 * page_i,
+                        .{
+                            .writable = (phdr.p_flags & std.elf.PF_W) != 0,
+                            .executable = (phdr.p_flags & std.elf.PF_X) != 0,
+                            .user = true,
+                            .global = false,
+                        },
+                    );
+                }
+            },
+            else => return error.BadElf,
+        }
+    }
+
+    const stack_frames = try arena.allocWithOptions(u8, stack_page_count * 0x1000, 0x1000, null);
+
+    for (0..stack_page_count) |page_i| {
+        try hal.mapPage(
+            arena,
+            task.page_table,
+            0x100200000 + 0x1000 * page_i,
+            hal.physFromVirt(task.page_table, @intFromPtr(stack_frames.ptr)).? + 0x1000 * page_i,
+            .{
+                .writable = true,
+                .executable = false,
+                .user = true,
+                .global = false,
+            },
+        );
+    }
+
+    const stack_top = 0x100200000 + 0x1000 * stack_page_count;
+
+    task.context.rcx = ehdr.e_entry;
+    task.context.rsp = stack_top;
 }

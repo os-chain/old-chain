@@ -56,7 +56,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = .ReleaseSafe,
         });
 
-        const exe_step = b.step(name, b.fmt("Build {s}", .{name}));
+        const exe_step = b.step(b.fmt("tool-{s}", .{name}), b.fmt("Build {s}", .{name}));
         exe_step.dependOn(&exe.step);
 
         try tools.put(name, exe);
@@ -154,11 +154,10 @@ pub fn build(b: *std.Build) !void {
 
         exe.root_module.addImport("chain", chain_mod);
 
-        const objcopy = b.addObjCopy(exe.getEmittedBin(), .{
-            .format = .bin,
-        });
+        _ = initrd_dir.addCopyFile(exe.getEmittedBin(), b.fmt("bin/{s}", .{name}));
 
-        _ = initrd_dir.addCopyFile(objcopy.getOutput(), b.fmt("bin/{s}", .{name}));
+        const step = b.step(b.fmt("app-{s}", .{name}), b.fmt("Build {s}", .{name}));
+        step.dependOn(&b.addInstallBinFile(exe.getEmittedBin(), name).step);
     }
 
     const limine = b.dependency("limine", .{});
