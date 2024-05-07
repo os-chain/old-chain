@@ -34,7 +34,7 @@ pub fn main() void {
         };
 
         if (input.len > 0) {
-            if (input.len == 1 and input[0] == 'q') {
+            if (std.mem.eql(u8, input, "exit")) {
                 chain.exit(0);
             } else {
                 chain.print("Unknown command: ");

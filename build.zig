@@ -2,10 +2,18 @@ const std = @import("std");
 
 const version = std.SemanticVersion.parse("0.1.0-dev") catch unreachable;
 
-pub fn getKernelTarget(b: *std.Build, arch: std.Target.Cpu.Arch) !std.Build.ResolvedTarget {
+const TargetKind = enum {
+    kernel,
+    user,
+};
+
+pub fn getTarget(b: *std.Build, arch: std.Target.Cpu.Arch, kind: TargetKind) !std.Build.ResolvedTarget {
     return b.resolveTargetQuery(.{
         .cpu_arch = arch,
-        .os_tag = .freestanding,
+        .os_tag = switch (kind) {
+            .kernel => .freestanding,
+            .user => .other,
+        },
         .abi = .none,
         .cpu_features_add = switch (arch) {
             .x86_64 => blk: {
@@ -39,7 +47,7 @@ pub fn build(b: *std.Build) !void {
         .max_cpus = b.option(usize, "max_cpus", "Maximum number of CPUs to support") orelse 256,
     };
 
-    const kernel_target = try getKernelTarget(b, build_options.arch);
+    const kernel_target = try getTarget(b, build_options.arch, .kernel);
 
     const optimize = b.standardOptimizeOption(.{});
 
@@ -142,11 +150,7 @@ pub fn build(b: *std.Build) !void {
 
         const exe = b.addExecutable(.{
             .name = name,
-            .target = b.resolveTargetQuery(.{
-                .cpu_arch = build_options.arch,
-                .os_tag = .other,
-                .abi = .none,
-            }),
+            .target = try getTarget(b, build_options.arch, .user),
             .optimize = .ReleaseSmall,
             .root_source_file = .{ .path = b.fmt("user/apps/{s}/main.zig", .{name}) },
         });
