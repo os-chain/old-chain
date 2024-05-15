@@ -110,7 +110,6 @@ pub fn build(b: *std.Build) !void {
         defer walker.deinit();
         while (try walker.next()) |entry| {
             if (entry.kind == .file) {
-                std.log.debug("{s} : {s}", .{ entry.path, entry.basename });
                 _ = initrd_dir.addCopyFile(b.path(b.pathJoin(&.{ "base", entry.path })), entry.path);
             }
         }
