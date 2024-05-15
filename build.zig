@@ -60,7 +60,7 @@ pub fn build(b: *std.Build) !void {
         const exe = b.addExecutable(.{
             .name = name,
             .target = b.host,
-            .root_source_file = .{ .path = b.fmt("tools/{s}.zig", .{name}) },
+            .root_source_file = b.path(b.fmt("tools/{s}.zig", .{name})),
             .optimize = .ReleaseSafe,
         });
 
@@ -83,7 +83,7 @@ pub fn build(b: *std.Build) !void {
 
     const kernel = b.addExecutable(.{
         .name = "kernel",
-        .root_source_file = .{ .path = "kernel/src/main.zig" },
+        .root_source_file = b.path("kernel/src/main.zig"),
         .target = kernel_target,
         .optimize = optimize,
         .single_threaded = true,
@@ -91,14 +91,14 @@ pub fn build(b: *std.Build) !void {
         .pic = true,
     });
     kernel.root_module.addImport("limine", limine_zig);
-    kernel.setLinkerScript(.{ .path = b.fmt("kernel/linker-{s}.ld", .{@tagName(build_options.arch)}) });
+    kernel.setLinkerScript(b.path(b.fmt("kernel/linker-{s}.ld", .{@tagName(build_options.arch)})));
 
     const kernel_options = b.addOptions();
     kernel_options.addOption(std.SemanticVersion, "version", version);
     kernel_options.addOption(usize, "max_cpus", build_options.max_cpus);
     kernel_options.addOption(bool, "enable_smp", build_options.enable_smp);
     kernel.root_module.addOptions("options", kernel_options);
-    kernel.root_module.addAnonymousImport("font", .{ .root_source_file = .{ .path = "assets/vga8x16" } });
+    kernel.root_module.addAnonymousImport("font", .{ .root_source_file = b.path("assets/vga8x16") });
 
     const kernel_step = b.step("kernel", "Build the kernel");
     kernel_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
@@ -110,7 +110,8 @@ pub fn build(b: *std.Build) !void {
         defer walker.deinit();
         while (try walker.next()) |entry| {
             if (entry.kind == .file) {
-                _ = initrd_dir.addCopyFile(.{ .path = try base_dir.realpathAlloc(b.allocator, entry.path) }, entry.path);
+                std.log.debug("{s} : {s}", .{ entry.path, entry.basename });
+                _ = initrd_dir.addCopyFile(b.path(b.pathJoin(&.{ "base", entry.path })), entry.path);
             }
         }
     }
@@ -136,7 +137,7 @@ pub fn build(b: *std.Build) !void {
     initrd_step.dependOn(&b.addInstallFile(initrd, "initrd").step);
 
     const chain_mod = b.addModule("chain", .{
-        .root_source_file = .{ .path = "user/chain.zig" },
+        .root_source_file = b.path("user/chain.zig"),
     });
 
     const chain_mod_options = b.addOptions();
@@ -152,9 +153,9 @@ pub fn build(b: *std.Build) !void {
             .name = name,
             .target = try getTarget(b, build_options.arch, .user),
             .optimize = .ReleaseSmall,
-            .root_source_file = .{ .path = b.fmt("user/apps/{s}/main.zig", .{name}) },
+            .root_source_file = b.path(b.fmt("user/apps/{s}/main.zig", .{name})),
         });
-        exe.setLinkerScript(.{ .path = b.fmt("user/linker-{s}.ld", .{@tagName(build_options.arch)}) });
+        exe.setLinkerScript(b.path(b.fmt("user/linker-{s}.ld", .{@tagName(build_options.arch)})));
 
         exe.root_module.addImport("chain", chain_mod);
 
@@ -178,7 +179,7 @@ pub fn build(b: *std.Build) !void {
     const iso_tree = b.addWriteFiles();
     _ = iso_tree.addCopyFile(kernel.getEmittedBin(), "kernel.elf");
     _ = iso_tree.addCopyFile(initrd, "initrd");
-    _ = iso_tree.addCopyFile(.{ .path = "limine.cfg" }, "limine.cfg");
+    _ = iso_tree.addCopyFile(b.path("limine.cfg"), "limine.cfg");
     _ = iso_tree.addCopyFile(limine.path("limine-bios.sys"), "limine-bios.sys");
     _ = iso_tree.addCopyFile(limine.path("limine-bios-cd.bin"), "limine-bios-cd.bin");
     _ = iso_tree.addCopyFile(limine.path("limine-uefi-cd.bin"), "limine-uefi-cd.bin");
