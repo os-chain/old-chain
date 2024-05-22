@@ -26,7 +26,7 @@ pub const Entry = packed struct(u64) {
     };
 
     pub const Flags = packed struct(u4) {
-        rsv: u1 = undefined,
+        rsv: u1 = 0,
         long_code: bool,
         size: bool,
         granularity: bool,
