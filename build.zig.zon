@@ -4,11 +4,11 @@
     .dependencies = .{
         .limine = .{
             .url = "git+https://github.com/limine-bootloader/limine#v6.x-branch-binary",
-            .hash = "1220fe4055a1e5ae60114990c94f97c431f3b9e5b8cce39141486a194a36f17ada6c",
+            .hash = "1220d172ca6701c8aaa2544911ac40875ea3333de55fba29fc3db24511501f21823c",
         },
         .limine_zig = .{
-            .url = "git+https://github.com/limine-bootloader/limine-zig#trunk",
-            .hash = "1220889cec612d653c31a4063d20daa9ec382ac23f76e9cc60a778b0ad17377bafa1",
+            .url = "git+https://github.com/limine-bootloader/limine-zig#7b29b6e6f6d35052f01ed3831085a39aae131705",
+            .hash = "1220f946f839eab2ec49dca1c805ce72ac3e3ef9c47b3afcdecd1c05a7b35f66d277",
         },
     },
     .paths = .{""},
