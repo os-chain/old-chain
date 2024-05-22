@@ -78,11 +78,6 @@ fn enable() void {
     sendCommand(.enable_second_port);
 }
 
-fn reset() void {
-    cpu.outb(0x64, 0xFF);
-    cpu.outb(0x60, 0xFF);
-}
-
 fn configure() void {
     log.debug("Configuring...", .{});
     defer log.debug("Configuration done", .{});
@@ -130,9 +125,9 @@ pub fn init(allocator: std.mem.Allocator) !void {
     configure();
 
     enable();
-    reset();
 
     _ = cpu.inb(0x60);
+
     init_done = true;
 }
 
