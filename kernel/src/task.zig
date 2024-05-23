@@ -113,6 +113,8 @@ pub fn start() noreturn {
 }
 
 fn reschedule(context: *hal.ContextFrame) !void {
+    log.debug("Rescheduling from PID={?d}", .{getCurrentPid()});
+
     if (current == null and queue.readableLength() == 0) {
         hal.oneshot(hal.intFromIrq(0), reschedule_ticks);
         while (true) {}
@@ -129,6 +131,8 @@ fn reschedule(context: *hal.ContextFrame) !void {
         context.* = getCurrentTask().?.context;
         hal.setPageTableAddr(hal.physFromVirt(hal.getActivePageTable(), @intFromPtr(getCurrentTask().?.page_table)).?);
     }
+
+    log.debug("Returning from reschedule to PID={?d}", .{getCurrentPid()});
 }
 
 fn nextTask() void {
@@ -140,6 +144,8 @@ fn nextTask() void {
 }
 
 fn deleteTask(pid: Pid) void {
+    tasks.items[pid].?.arena.deinit();
+
     tasks.items[pid] = null;
 
     if (current == pid) current = null;
@@ -157,6 +163,10 @@ fn deleteTask(pid: Pid) void {
 fn killTask(pid: Pid) void {
     for (tasks.items[pid].?.children.items) |child| {
         killTask(child);
+    }
+
+    for (tasks.items[pid].?.files.items) |fd| {
+        if (fd) |file| file.close();
     }
 
     deleteTask(pid);
