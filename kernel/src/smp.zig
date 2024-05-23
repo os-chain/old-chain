@@ -85,6 +85,7 @@ pub fn init(comptime jmp: fn () callconv(.C) noreturn) noreturn {
 
     switch (builtin.cpu.arch) {
         .x86_64 => @import("arch/x86_64/cpu.zig").Msr.write(.KERNEL_GS_BASE, @intFromPtr(&cores_buf[0])),
+        .aarch64 => {},
         else => |other| @compileError(@tagName(other) ++ " not supported"),
     }
     jmp();

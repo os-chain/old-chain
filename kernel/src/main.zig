@@ -19,6 +19,7 @@ const log = std.log.scoped(.core);
 
 const arch = switch (builtin.cpu.arch) {
     .x86_64 => @import("arch/x86_64/start.zig"),
+    .aarch64 => @import("arch/aarch64/start.zig"),
     else => |other| @compileError("Unimplemented for " ++ @tagName(other)),
 };
 

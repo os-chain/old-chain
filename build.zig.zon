@@ -10,6 +10,14 @@
             .url = "git+https://github.com/limine-bootloader/limine-zig#7b29b6e6f6d35052f01ed3831085a39aae131705",
             .hash = "1220f946f839eab2ec49dca1c805ce72ac3e3ef9c47b3afcdecd1c05a7b35f66d277",
         },
+        .edk2 = .{
+            .url = "git+https://github.com/tianocore/edk2#7142e648416ff5d3eac6c6d607874805f5de0ca8",
+            .hash = "12206b511a236bb7d1139470f675e7e77fadd1ee30315ec85ca8e3c923151d7ea556",
+        },
+        .ovmf = .{
+            .url = "git+https://github.com/os-chain/ovmf#742b1e09dda22cbdca8318d793b7516665ead9da",
+            .hash = "1220a3f253caf1dabe97c9043fd276946da645aad33a3170fd88691e5970e54fae06",
+        },
     },
     .paths = .{""},
 }
