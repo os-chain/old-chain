@@ -139,9 +139,12 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("user/chain.zig"),
     });
 
-    const chain_mod_options = b.addOptions();
-    chain_mod_options.addOption([]const []const u8, "syscalls", @import("kernel/src/syscall.zig").syscalls);
-    chain_mod.addOptions("options", chain_mod_options);
+    const abi_mod = b.createModule(.{
+        .root_source_file = b.path("user/abi.zig"),
+    });
+
+    chain_mod.addImport("abi", abi_mod);
+    kernel.root_module.addImport("abi", abi_mod);
 
     const apps_dir = try b.build_root.handle.openDir("user/apps", .{ .iterate = true });
     var apps_iter = apps_dir.iterate();

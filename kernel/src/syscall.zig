@@ -1,18 +1,11 @@
 const std = @import("std");
+const abi = @import("abi");
 const hal = @import("hal.zig");
 const task = @import("task.zig");
 
-pub fn getFunction(comptime name: []const u8) @TypeOf(@field(funcs, name)) {
-    return @field(funcs, name);
+pub fn getFunction(comptime syscall: abi.Syscall) @TypeOf(@field(funcs, @tagName(syscall))) {
+    return @field(funcs, @tagName(syscall));
 }
-
-pub const syscalls: []const []const u8 = &.{
-    "write",
-    "read",
-    "exit",
-    "fork",
-    "execve",
-};
 
 const funcs = struct {
     fn write(_: *hal.ContextFrame, _fd: u64, _buf_ptr: u64, _buf_len: u64) u64 {
@@ -55,8 +48,12 @@ const funcs = struct {
         return task.fork(frame);
     }
 
-    fn execve(frame: *hal.ContextFrame, _argc: usize, _argv: usize) void {
+    fn execve(frame: *hal.ContextFrame, _argc: usize, _argv: usize) abi.Syscall.execve.GetErrorEnum().? {
         const argv = @as([*]const []const u8, @ptrFromInt(_argv))[0.._argc];
-        task.execve(frame, argv);
+        task.execve(frame, argv) catch |err| switch (err) {
+            error.CannotOpenFile => return .cannot_open_file,
+        };
+
+        return @enumFromInt(0);
     }
 };

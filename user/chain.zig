@@ -1,5 +1,5 @@
 const std = @import("std");
-const options = @import("options");
+const abi = @import("abi");
 const root = @import("root");
 
 pub fn _start() callconv(.C) void {
@@ -10,11 +10,8 @@ pub fn _start() callconv(.C) void {
 pub const stdout = 0;
 pub const stdin = 1;
 
-fn getSyscallNum(comptime name: []const u8) usize {
-    for (options.syscalls, 0..) |syscall, i| {
-        if (std.mem.eql(u8, syscall, name)) return i;
-    }
-    unreachable;
+fn getSyscallNum(comptime syscall: abi.Syscall) usize {
+    return @intFromEnum(syscall);
 }
 
 pub fn print(buf: []const u8) void {
@@ -22,24 +19,32 @@ pub fn print(buf: []const u8) void {
 }
 
 pub fn write(fd: usize, buf: []const u8) usize {
-    return syscall3(getSyscallNum("write"), fd, @intFromPtr(buf.ptr), buf.len);
+    return syscall3(getSyscallNum(.write), fd, @intFromPtr(buf.ptr), buf.len);
 }
 
 pub fn read(fd: usize, buf: []u8) usize {
-    return syscall3(getSyscallNum("read"), fd, @intFromPtr(buf.ptr), buf.len);
+    return syscall3(getSyscallNum(.read), fd, @intFromPtr(buf.ptr), buf.len);
 }
 
 pub fn exit(ret: u8) noreturn {
-    _ = syscall1(getSyscallNum("exit"), ret);
+    while (true) {}
+
+    _ = syscall1(getSyscallNum(.exit), ret);
     unreachable;
 }
 
 pub fn fork() usize {
-    return syscall0(getSyscallNum("fork"));
+    return syscall0(getSyscallNum(.fork));
 }
 
-pub fn execve(argv: []const []const u8) void {
-    _ = syscall2(getSyscallNum("execve"), argv.len, @intFromPtr(argv.ptr));
+pub const ExecveError = error{
+    CannotOpenFile,
+};
+
+pub fn execve(argv: []const []const u8) ExecveError {
+    switch (@as(abi.Syscall.execve.GetErrorEnum().?, @enumFromInt(syscall2(getSyscallNum(.execve), argv.len, @intFromPtr(argv.ptr))))) {
+        .cannot_open_file => return error.CannotOpenFile,
+    }
 }
 
 fn syscall0(comptime n: usize) usize {

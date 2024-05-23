@@ -9,8 +9,12 @@ fn runCmd(argv: []const []const u8) void {
     const child = chain.fork();
 
     if (child == 0) {
-        chain.execve(argv);
-        chain.print("execve() failed\n");
+        switch (chain.execve(argv)) {
+            error.CannotOpenFile => {
+                chain.print("No such file\n");
+                chain.exit(1);
+            },
+        }
     }
 }
 

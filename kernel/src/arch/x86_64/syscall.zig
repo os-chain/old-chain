@@ -1,4 +1,5 @@
 const std = @import("std");
+const abi = @import("abi");
 const cpu = @import("cpu.zig");
 const gdt = @import("gdt.zig");
 const tss = @import("tss.zig");
@@ -113,9 +114,9 @@ export fn syscallHandler(frame: *cpu.ContextFrame) void {
     );
 
     switch (frame.rax) {
-        inline 0...root_syscall.syscalls.len - 1 => |n| {
-            const name = root_syscall.syscalls[n];
-            const func = root_syscall.getFunction(name);
+        inline 0...std.meta.fields(abi.Syscall).len - 1 => |n| {
+            const syscall: abi.Syscall = @enumFromInt(n);
+            const func = root_syscall.getFunction(syscall);
             const argc = @typeInfo(@TypeOf(func)).Fn.params.len - 1;
 
             const ret = switch (argc) {
@@ -130,9 +131,13 @@ export fn syscallHandler(frame: *cpu.ContextFrame) void {
             };
 
             switch (@TypeOf(ret)) {
-                u64 => frame.rax = ret,
+                u64, u8 => frame.rax = ret,
                 void => frame.rax = 0,
-                else => |other| @compileError(std.fmt.comptimePrint("Syscall {d} has a return type of {}", .{ n, other })),
+                inline else => |other| {
+                    if (other == syscall.GetErrorEnum()) {
+                        frame.rax = @intFromEnum(ret);
+                    } else @compileError(std.fmt.comptimePrint("Syscall {d} has a return type of {}", .{ n, other }));
+                },
             }
         },
         else => log.debug("Unknown syscall {d}", .{frame.rax}),

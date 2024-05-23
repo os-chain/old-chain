@@ -250,12 +250,12 @@ pub fn fork(context: *hal.ContextFrame) Pid {
     return pid;
 }
 
-pub fn execve(context: *hal.ContextFrame, argv: []const []const u8) void {
+pub fn execve(context: *hal.ContextFrame, argv: []const []const u8) !void {
     const task = &(tasks.items[getCurrentPid().?].?);
 
     const arena = task.arena.allocator();
 
-    const node = vfs.openPath(argv[0]) catch return;
+    const node = vfs.openPath(argv[0]) catch return error.CannotOpenFile;
     defer node.close();
 
     // TODO: Use a stream
