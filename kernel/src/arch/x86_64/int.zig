@@ -18,7 +18,7 @@ pub const IdtEntry = packed struct(u128) {
     ring: u2,
     present: bool,
     offset_high: u48,
-    rsv_c: u32 = undefined,
+    rsv_c: u32 = 0,
 
     pub const Type = enum(u4) {
         tss_available = 0b1001,
@@ -160,9 +160,8 @@ pub fn init() void {
             },
             .ring = 3,
             .present = true,
-
-            .offset_low = undefined,
-            .offset_high = undefined,
+            .offset_low = 0,
+            .offset_high = 0,
         };
         idt[i].setOffset(@intFromPtr(getVector(i)));
     }
