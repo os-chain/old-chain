@@ -151,24 +151,20 @@ pub fn init() void {
 
     inline for (0..256) |i_raw| {
         const i: u8 = @truncate(i_raw);
-        if (getVector(i)) |vector| {
-            idt[i] = .{
-                .segment = gdt.selectors.kcode_64,
-                .ist = 1,
-                .type = switch (i) {
-                    0...31 => .trap,
-                    32...255 => .interrupt,
-                },
-                .ring = 3,
-                .present = true,
+        idt[i] = .{
+            .segment = gdt.selectors.kcode_64,
+            .ist = 1,
+            .type = switch (i) {
+                0...31 => .trap,
+                32...255 => .interrupt,
+            },
+            .ring = 3,
+            .present = true,
 
-                .offset_low = undefined,
-                .offset_high = undefined,
-            };
-            idt[i].setOffset(@intFromPtr(vector));
-        } else {
-            idt[i].present = false;
-        }
+            .offset_low = undefined,
+            .offset_high = undefined,
+        };
+        idt[i].setOffset(@intFromPtr(getVector(i)));
     }
 
     log.debug("Loading IDTD...", .{});
@@ -180,7 +176,7 @@ pub fn init() void {
     log.debug("Interrupts enabled", .{});
 }
 
-fn getVector(comptime i: u8) ?*const fn () callconv(.Naked) void {
+fn getVector(comptime i: u8) *const fn () callconv(.Naked) void {
     return struct {
         fn f() callconv(.Naked) void {
             switch (i) {
