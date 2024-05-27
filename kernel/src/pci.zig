@@ -265,6 +265,51 @@ const StatusRegister = packed struct(u16) {
     };
 };
 
+pub const Bus = struct {
+    bus: u8,
+
+    pub fn format(self: Bus, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("pci@{x:0>2}", .{self.bus});
+    }
+
+    pub const Device = struct {
+        bus: Bus,
+        device: u5,
+
+        pub fn format(self: Device, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+            try writer.print("{}:{x:0>2}", .{ self.bus, self.device });
+        }
+
+        pub const Function = struct {
+            device: Device,
+            function: u3,
+
+            pub fn format(self: Function, comptime fmt: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+                const detailed = std.mem.eql(u8, fmt, "detailed");
+
+                const class = getClass(self.device.bus.bus, self.device.device, self.function);
+                switch (class) {
+                    inline else => |other| {
+                        const subclass = getSubclass(self.device.bus.bus, self.device.device, self.function, other);
+                        const vendor = getVendor(self.device.bus.bus, self.device.device, self.function);
+
+                        try writer.print("{}.{x}", .{ self.device, self.function });
+
+                        if (detailed) {
+                            try writer.print(" (class={s}, subclass={s}, vendor={s}:{x:0>4})", .{
+                                @tagName(class),
+                                @tagName(subclass),
+                                vendor.getName(),
+                                @intFromEnum(vendor),
+                            });
+                        }
+                    },
+                }
+            }
+        };
+    };
+};
+
 const log = std.log.scoped(.pci);
 
 const config_address_port = 0xCF8;
@@ -296,6 +341,10 @@ fn getVendor(bus: u8, device: u5, function: u3) Vendor {
     return @enumFromInt(configReadWord(bus, device, function, 0));
 }
 
+fn getDeviceId(bus: u8, device: u5, function: u3) DeviceId {
+    return @enumFromInt(configReadWord(bus, device, function, 0x2));
+}
+
 fn getClassSubclassWord(bus: u8, device: u5, function: u3) u16 {
     return configReadWord(bus, device, function, 0xA);
 }
@@ -315,21 +364,16 @@ fn getHeaderType(bus: u8, device: u5, function: u3) HeaderType {
 }
 
 fn checkFunction(bus: u8, device: u5, function: u3) void {
-    const class = getClass(bus, device, function);
-    switch (class) {
-        inline else => |other| {
-            const subclass = getSubclass(bus, device, function, other);
-            log.debug("Found pci@{x:0>2}:{x:0>2}.{x:0>1} (class={s}, subclass={s}, vendor={s}:{x:0>2})", .{
-                bus,
-                device,
-                function,
-                @tagName(class),
-                @tagName(subclass),
-                getVendor(bus, device, function).getName(),
-                @intFromEnum(getVendor(bus, device, function)),
-            });
+    const func = Bus.Device.Function{
+        .device = .{
+            .bus = .{
+                .bus = bus,
+            },
+            .device = device,
         },
-    }
+        .function = function,
+    };
+    log.debug("Found {detailed}", .{func});
 }
 
 fn checkDevice(bus: u8, device: u5) void {
