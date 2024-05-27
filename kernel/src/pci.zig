@@ -2,10 +2,15 @@ const std = @import("std");
 const hal = @import("hal.zig");
 
 const Vendor = enum(u16) {
+    intel = 0x8086,
     _,
 
     fn valid(self: Vendor) bool {
         return @intFromEnum(self) != 0xffff;
+    }
+
+    fn getName(self: Vendor) []const u8 {
+        return std.enums.tagName(Vendor, self) orelse "unknown";
     }
 };
 
@@ -314,7 +319,15 @@ fn checkFunction(bus: u8, device: u5, function: u3) void {
     switch (class) {
         inline else => |other| {
             const subclass = getSubclass(bus, device, function, other);
-            log.debug("Found pci@{x:0>2}:{x:0>2}.{x:0>1} (class={s}, subclass={s})", .{ bus, device, function, @tagName(class), @tagName(subclass) });
+            log.debug("Found pci@{x:0>2}:{x:0>2}.{x:0>1} (class={s}, subclass={s}, vendor={s}:{x:0>2})", .{
+                bus,
+                device,
+                function,
+                @tagName(class),
+                @tagName(subclass),
+                getVendor(bus, device, function).getName(),
+                @intFromEnum(getVendor(bus, device, function)),
+            });
         },
     }
 }
