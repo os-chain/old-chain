@@ -14,9 +14,7 @@ const Vendor = enum(u16) {
     }
 };
 
-const DeviceId = enum(u16) {
-    _,
-};
+const DeviceId = u16;
 
 const Class = enum(u8) {
     unclassified = 0x00,
@@ -292,15 +290,17 @@ pub const Bus = struct {
                     inline else => |other| {
                         const subclass = getSubclass(self.device.bus.bus, self.device.device, self.function, other);
                         const vendor = getVendor(self.device.bus.bus, self.device.device, self.function);
+                        const device_id = getDeviceId(self.device.bus.bus, self.device.device, self.function);
 
                         try writer.print("{}.{x}", .{ self.device, self.function });
 
                         if (detailed) {
-                            try writer.print(" (class={s}, subclass={s}, vendor={s}:{x:0>4})", .{
+                            try writer.print(" (class={s}, subclass={s}, vendor={s}:{x:0>4}, device_id={x:0>4})", .{
                                 @tagName(class),
                                 @tagName(subclass),
                                 vendor.getName(),
                                 @intFromEnum(vendor),
+                                device_id,
                             });
                         }
                     },
@@ -342,7 +342,7 @@ fn getVendor(bus: u8, device: u5, function: u3) Vendor {
 }
 
 fn getDeviceId(bus: u8, device: u5, function: u3) DeviceId {
-    return @enumFromInt(configReadWord(bus, device, function, 0x2));
+    return configReadWord(bus, device, function, 0x2);
 }
 
 fn getClassSubclassWord(bus: u8, device: u5, function: u3) u16 {
