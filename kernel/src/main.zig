@@ -9,6 +9,7 @@ const vfs = @import("fs/vfs.zig");
 const devfs = @import("fs/devfs.zig");
 const initrd = @import("initrd.zig");
 const crofs = @import("fs/crofs.zig");
+const pci = @import("pci.zig");
 const framebuffer = @import("framebuffer.zig");
 const tty = @import("tty.zig");
 const task = @import("task.zig");
@@ -119,6 +120,7 @@ fn init() !void {
         try initrd.init(allocator);
         try crofs.init();
         try vfs.mountDevice("/dev/initrd", "/");
+        try pci.init();
         try arch.initDevices(allocator);
         try framebuffer.init(allocator);
         try tty.init();

@@ -1,4 +1,4 @@
-const cpu = @import("cpu.zig");
+pub const cpu = @import("cpu.zig");
 const paging = @import("paging.zig");
 const lapic = @import("lapic.zig");
 const int = @import("int.zig");

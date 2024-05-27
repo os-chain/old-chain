@@ -31,6 +31,13 @@ pub inline fn inw(port: u16) u16 {
     );
 }
 
+pub inline fn inl(port: u16) u32 {
+    return asm volatile ("inl %[port], %[result]"
+        : [result] "={eax}" (-> u32),
+        : [port] "N{dx}" (port),
+    );
+}
+
 pub inline fn outb(port: u16, data: u8) void {
     asm volatile ("outb %[data], %[port]"
         :
@@ -43,6 +50,14 @@ pub inline fn outw(port: u16, data: u16) void {
     asm volatile ("outw %[data], %[port]"
         :
         : [data] "{ax}" (data),
+          [port] "N{dx}" (port),
+    );
+}
+
+pub inline fn outl(port: u16, data: u32) void {
+    asm volatile ("outl %[data], %[port]"
+        :
+        : [data] "{eax}" (data),
           [port] "N{dx}" (port),
     );
 }
