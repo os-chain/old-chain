@@ -120,7 +120,7 @@ fn init() !void {
         try initrd.init(allocator);
         try crofs.init();
         try vfs.mountDevice("/dev/initrd", "/");
-        try pci.init();
+        pci.init();
         try arch.initDevices(allocator);
         try framebuffer.init(allocator);
         try tty.init();

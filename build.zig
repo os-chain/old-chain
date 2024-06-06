@@ -43,7 +43,7 @@ pub fn getTarget(b: *std.Build, arch: std.Target.Cpu.Arch, kind: TargetKind) !st
 pub fn build(b: *std.Build) !void {
     const build_options = .{
         .arch = b.option(std.Target.Cpu.Arch, "arch", "The architecture to build for") orelse .x86_64,
-        .emul_smp = b.option(usize, "emul_smp", "SMP (cores) to use for emulation") orelse 4,
+        .emul_smp = b.option(usize, "emul_smp", "SMP (cores) to use for emulation") orelse 1,
         .gdb = b.option(bool, "gdb", "Wait for a GDB connection when emulating") orelse false,
         .enable_smp = b.option(bool, "enable_smp", "Build with SMP support") orelse false,
         .max_cpus = b.option(usize, "max_cpus", "Maximum number of CPUs to support") orelse 256,

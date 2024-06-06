@@ -142,7 +142,7 @@ pub const Bus = struct {
                 }
             }
 
-            fn readConfigWord(self: Function, offset: u8) u16 {
+            fn readConfig16(self: Function, offset: u8) u16 {
                 const Address = packed struct(u32) {
                     offset: u8,
                     function: u3,
@@ -164,8 +164,12 @@ pub const Bus = struct {
                 return @truncate(hal.cpu.inl(0xCFC) >> @intCast((offset & 2) * 8));
             }
 
+            fn readConfig32(self: Function, offset: u8) u32 {
+                return self.readConfig16(offset) | (@as(u32, self.readConfig16(offset + 2)) << 16);
+            }
+
             fn getClassSubclassWord(self: Function) u16 {
-                return self.readConfigWord(0x0A);
+                return self.readConfig16(0x0A);
             }
 
             fn getClass(self: Function) Class {
@@ -179,15 +183,15 @@ pub const Bus = struct {
             }
 
             fn getVendor(self: Function) Vendor {
-                return @enumFromInt(self.readConfigWord(0x00));
+                return @enumFromInt(self.readConfig16(0x00));
             }
 
             fn getDeviceId(self: Function) DeviceId {
-                return self.readConfigWord(0x02);
+                return self.readConfig16(0x02);
             }
 
             fn getHeaderType(self: Function) HeaderType {
-                return @bitCast(@as(u8, @truncate(self.readConfigWord(0x0E))));
+                return @bitCast(@as(u8, @truncate(self.readConfig16(0x0E))));
             }
 
             fn check(self: Function) void {
@@ -209,6 +213,32 @@ pub const Bus = struct {
 
                 return true;
             }
+
+            pub fn getBarType(self: Function, n: u8) BarType {
+                switch (self.getHeaderType().type) {
+                    .general => {
+                        std.debug.assert(n <= 5);
+                        return @enumFromInt(@as(u1, @truncate(self.readConfig16(0x10 + n * 4))));
+                    },
+                    .pci_to_pci => {
+                        std.debug.assert(n <= 1);
+                        return @enumFromInt(@as(u1, @truncate(self.readConfig16(0x10 + n * 4))));
+                    },
+                    .pci_to_cardbus => @panic("Tried to get BAR type for a PCI-to-CardBus header type"),
+                }
+            }
+
+            pub fn getBarAddr(self: Function, n: u8) u64 {
+                return switch (self.getBarType(n)) {
+                    .mmio => (self.readConfig32(0x10 + n * 4) & 0xFFFFFFF0) + (@as(u64, self.readConfig32(0x10 + (n + 4) * 4) & 0xFFFFFFFF) << 32),
+                    .ports => @as(u16, @truncate(self.readConfig32(0x10 + n * 4) & 0xFFFFFFFC)),
+                };
+            }
+
+            pub const BarType = enum(u1) {
+                mmio = 0,
+                ports = 1,
+            };
 
             pub const Vendor = enum(u16) {
                 intel = 0x8086,
@@ -431,8 +461,8 @@ fn checkAllBuses() void {
 }
 
 pub const FunctionQuery = struct {
-    vendor: ?Bus.Device.Function.Vendor,
-    device_id: ?Bus.Device.Function.DeviceId,
+    vendor: ?Bus.Device.Function.Vendor = null,
+    device_id: ?Bus.Device.Function.DeviceId = null,
 };
 
 pub fn queryFunction(query: FunctionQuery) ?Bus.Device.Function {
@@ -446,7 +476,7 @@ pub fn queryFunction(query: FunctionQuery) ?Bus.Device.Function {
     return null;
 }
 
-pub fn init() !void {
+pub fn init() void {
     log.debug("Initializing...", .{});
     defer log.debug("Initialization done", .{});
 
